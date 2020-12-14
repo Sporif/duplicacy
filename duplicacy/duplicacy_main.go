@@ -1015,7 +1015,6 @@ func printFile(context *cli.Context) {
 		snapshotID = context.String("id")
 	}
 
-
 	backupManager := duplicacy.CreateBackupManager(preference.SnapshotID, storage, repository, password, "", "", false)
 	duplicacy.SavePassword(*preference, "password", password)
 
@@ -1262,7 +1261,7 @@ func copySnapshots(context *cli.Context) {
 	destinationStorage.SetRateLimits(0, context.Int("upload-limit-rate"))
 
 	destinationManager := duplicacy.CreateBackupManager(destination.SnapshotID, destinationStorage, repository,
-		                                                  destinationPassword, "", "", false)
+		destinationPassword, "", "", false)
 	duplicacy.SavePassword(*destination, "password", destinationPassword)
 	destinationManager.SetupSnapshotCache(destination.Name)
 
@@ -1387,7 +1386,7 @@ func benchmark(context *cli.Context) {
 	if storage == nil {
 		return
 	}
-	duplicacy.Benchmark(repository, storage, int64(fileSize) * 1024 * 1024, chunkSize * 1024 * 1024, chunkCount, uploadThreads, downloadThreads)
+	duplicacy.Benchmark(repository, storage, int64(fileSize)*1024*1024, chunkSize*1024*1024, chunkCount, uploadThreads, downloadThreads)
 }
 
 func main() {
@@ -1565,7 +1564,7 @@ func main() {
 				cli.BoolFlag{
 					Name:  "persist",
 					Usage: "continue processing despite chunk errors or existing files (without -overwrite), reporting any affected files",
-        },
+				},
 				cli.StringFlag{
 					Name:     "key-passphrase",
 					Usage:    "the passphrase to decrypt the RSA private key",
@@ -2176,8 +2175,8 @@ func main() {
 			Usage: "add a comment to identify the process",
 		},
 		cli.StringSliceFlag{
-			Name:  "suppress, s",
-			Usage: "suppress logs with the specified id",
+			Name:     "suppress, s",
+			Usage:    "suppress logs with the specified id",
 			Argument: "<id>",
 		},
 	}
