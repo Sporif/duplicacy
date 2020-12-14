@@ -5,14 +5,19 @@
 package duplicacy
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
+
+	"github.com/tigerwill90/fastcdc"
 )
 
-// ChunkMaker breaks data into chunks using buzhash.  To save memory, the chunk maker only use a circular buffer
-// whose size is double the minimum chunk size.
+// ChunkMaker breaks data into chunks using FastCDC. To save memory, the chunk maker only uses a circular buffer
+// whose size is the maximum chunk size.
 type ChunkMaker struct {
 	maximumChunkSize int
 	minimumChunkSize int
@@ -48,7 +53,7 @@ func CreateChunkMaker(config *Config, hashOnly bool) *ChunkMaker {
 		hashMask:         uint64(config.AverageChunkSize - 1),
 		maximumChunkSize: config.MaximumChunkSize,
 		minimumChunkSize: config.MinimumChunkSize,
-		bufferCapacity:   2 * config.MinimumChunkSize,
+		bufferCapacity:   config.MaximumChunkSize,
 		config:           config,
 		hashOnly:         hashOnly,
 	}
@@ -66,28 +71,9 @@ func CreateChunkMaker(config *Config, hashOnly bool) *ChunkMaker {
 		randomData = sha256.Sum256(randomData[:])
 	}
 
-	maker.buffer = make([]byte, 2*config.MinimumChunkSize)
+	maker.buffer = make([]byte, maker.bufferCapacity)
 
 	return maker
-}
-
-func rotateLeft(value uint64, bits uint) uint64 {
-	return (value << (bits & 0x3f)) | (value >> (64 - (bits & 0x3f)))
-}
-
-func rotateLeftByOne(value uint64) uint64 {
-	return (value << 1) | (value >> 63)
-}
-
-func (maker *ChunkMaker) buzhashSum(sum uint64, data []byte) uint64 {
-	for i := 0; i < len(data); i++ {
-		sum = rotateLeftByOne(sum) ^ maker.randomTable[data[i]]
-	}
-	return sum
-}
-
-func (maker *ChunkMaker) buzhashUpdate(sum uint64, out byte, in byte, length int) uint64 {
-	return rotateLeftByOne(sum) ^ rotateLeft(maker.randomTable[out], uint(length)) ^ maker.randomTable[in]
 }
 
 // ForEachChunk reads data from 'reader'.  If EOF is encountered, it will call 'nextReader' to ask for next file.  If
@@ -96,20 +82,14 @@ func (maker *ChunkMaker) buzhashUpdate(sum uint64, out byte, in byte, length int
 func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *Chunk, final bool),
 	nextReader func(size int64, hash string) (io.Reader, bool)) {
 
-	maker.bufferStart = 0
-	maker.bufferSize = 0
-
-	var minimumReached bool
-	var hashSum uint64
 	var chunk *Chunk
+	var err error
 
 	fileSize := int64(0)
 	fileHasher := maker.config.NewFileHasher()
 
-	// Start a new chunk.
 	startNewChunk := func() {
-		hashSum = 0
-		minimumReached = false
+		maker.bufferSize = 0
 		if maker.hashOnly {
 			chunk = maker.hashOnlyChunk
 			chunk.Reset(true)
@@ -119,26 +99,9 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 		}
 	}
 
-	// Move data from the buffer to the chunk.
-	fill := func(count int) {
-		if maker.bufferStart+count < maker.bufferCapacity {
-			chunk.Write(maker.buffer[maker.bufferStart : maker.bufferStart+count])
-			maker.bufferStart += count
-			maker.bufferSize -= count
-		} else {
-			chunk.Write(maker.buffer[maker.bufferStart:])
-			chunk.Write(maker.buffer[:count-(maker.bufferCapacity-maker.bufferStart)])
-			maker.bufferStart = count - (maker.bufferCapacity - maker.bufferStart)
-			maker.bufferSize -= count
-		}
-	}
-
 	startNewChunk()
 
-	var err error
-
 	isEOF := false
-
 	if maker.minimumChunkSize == maker.maximumChunkSize {
 
 		if maker.bufferCapacity < maker.minimumChunkSize {
@@ -152,7 +115,7 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 
 				if err != nil {
 					if err != io.EOF {
-						LOG_ERROR("CHUNK_MAKER", "Failed to read %d bytes: %s", count, err.Error())
+						LOG_ERROR("CHUNK_MAKER", "Failed after reading %d bytes: %s", fileSize+int64(count), err.Error())
 						return
 					} else {
 						isEOF = true
@@ -172,8 +135,10 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 					endOfChunk(chunk, true)
 					return
 				} else {
-					endOfChunk(chunk, false)
-					startNewChunk()
+					if chunk.GetLength() > 0 {
+						endOfChunk(chunk, false)
+						startNewChunk()
+					}
 					fileSize = 0
 					fileHasher = maker.config.NewFileHasher()
 					isEOF = false
@@ -186,21 +151,22 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 
 	}
 
-	for {
+	chunker, err := fastcdc.NewChunker(context.Background(), fastcdc.WithStreamMode(), fastcdc.WithChunksSize(uint(maker.minimumChunkSize), uint(maker.config.AverageChunkSize), uint(maker.maximumChunkSize)))
 
+	if err != nil {
+		LOG_ERROR("CHUNK_MAKER", "Failed to create new chunk: %v", err)
+		return
+	}
+
+	for {
 		// If the buffer still has some space left and EOF is not seen, read more data.
-		for maker.bufferSize < maker.bufferCapacity && !isEOF {
-			start := maker.bufferStart + maker.bufferSize
+		for maker.bufferSize < maker.bufferCapacity {
+			start := maker.bufferSize
 			count := maker.bufferCapacity - start
-			if start >= maker.bufferCapacity {
-				start -= maker.bufferCapacity
-				count = maker.bufferStart - start
-			}
 
 			count, err = reader.Read(maker.buffer[start : start+count])
-
 			if err != nil && err != io.EOF {
-				LOG_ERROR("CHUNK_MAKER", "Failed to read %d bytes: %s", count, err.Error())
+				LOG_ERROR("CHUNK_MAKER", "Failed after reading %d bytes: %s", fileSize+int64(count), err.Error())
 				return
 			}
 
@@ -213,84 +179,57 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 				var ok bool
 				reader, ok = nextReader(fileSize, hex.EncodeToString(fileHasher.Sum(nil)))
 				if !ok {
-					isEOF = true
+					chunk.Write(maker.buffer[:maker.bufferSize])
+					endOfChunk(chunk, true)
+					return
 				} else {
 					fileSize = 0
 					fileHasher = maker.config.NewFileHasher()
-					isEOF = false
+				}
+
+				// Make new chunk if minimum chunksize has been gathered
+				if maker.bufferSize >= maker.minimumChunkSize {
+					chunk.Write(maker.buffer[:maker.bufferSize])
+					endOfChunk(chunk, false)
+					startNewChunk()
 				}
 			}
 		}
 
-		// No eough data to meet the minimum chunk size requirement, so just return as a chunk.
-		if maker.bufferSize < maker.minimumChunkSize {
-			fill(maker.bufferSize)
-			endOfChunk(chunk, true)
+		err = chunker.Split(bytes.NewReader(maker.buffer), func(offset, length uint, newChunk []byte) error {
+			if length == 0 {
+				return errors.New("Empty chunk")
+			} else if length < 0 {
+				return errors.New("chunk size less than 0")
+			}
+
+			chunk.Write(newChunk)
+			endOfChunk(chunk, false)
+			startNewChunk()
+			return nil
+		})
+		if err != nil {
+			LOG_ERROR("CHUNK_MAKER", "Failed to split buffer: %v", err)
 			return
 		}
 
-		// Minimum chunk size has been reached.  Calculate the buzhash for the minimum size chunk.
-		if !minimumReached {
-
-			bytes := maker.minimumChunkSize
-
-			if maker.bufferStart+bytes < maker.bufferCapacity {
-				hashSum = maker.buzhashSum(0, maker.buffer[maker.bufferStart:maker.bufferStart+bytes])
-			} else {
-				hashSum = maker.buzhashSum(0, maker.buffer[maker.bufferStart:])
-				hashSum = maker.buzhashSum(hashSum,
-					maker.buffer[:bytes-(maker.bufferCapacity-maker.bufferStart)])
-			}
-
-			if (hashSum & maker.hashMask) == 0 {
-				// This is a minimum size chunk
-				fill(bytes)
+		err = chunker.Finalize(func(offset, length uint, newChunk []byte) error {
+			if int(length) >= maker.minimumChunkSize {
+				chunk.Write(newChunk)
 				endOfChunk(chunk, false)
 				startNewChunk()
-				continue
+			} else if length == 0 {
+				return errors.New("Empty chunk")
+			} else if length < 0 {
+				return errors.New("chunk size less than 0")
+			} else {
+				maker.bufferSize = int(length)
+				copy(maker.buffer, newChunk)
 			}
-
-			minimumReached = true
-		}
-
-		// Now check the buzhash of the data in the buffer, shifting one byte at a time.
-		bytes := maker.bufferSize - maker.minimumChunkSize
-		isEOC := false
-		maxSize := maker.maximumChunkSize - chunk.GetLength()
-		for i := 0; i < maker.bufferSize-maker.minimumChunkSize; i++ {
-			out := maker.bufferStart + i
-			if out >= maker.bufferCapacity {
-				out -= maker.bufferCapacity
-			}
-			in := maker.bufferStart + i + maker.minimumChunkSize
-			if in >= maker.bufferCapacity {
-				in -= maker.bufferCapacity
-			}
-
-			hashSum = maker.buzhashUpdate(hashSum, maker.buffer[out], maker.buffer[in], maker.minimumChunkSize)
-			if (hashSum&maker.hashMask) == 0 || i == maxSize-maker.minimumChunkSize-1 {
-				// A chunk is completed.
-				bytes = i + 1 + maker.minimumChunkSize
-				isEOC = true
-				break
-			}
-		}
-
-		fill(bytes)
-
-		if isEOC {
-			if isEOF && maker.bufferSize == 0 {
-				endOfChunk(chunk, true)
-				return
-			}
-			endOfChunk(chunk, false)
-			startNewChunk()
-			continue
-		}
-
-		if isEOF {
-			fill(maker.bufferSize)
-			endOfChunk(chunk, true)
+			return nil
+		})
+		if err != nil {
+			LOG_ERROR("CHUNK_MAKER", "Failed to finalize buffer: %v", err)
 			return
 		}
 	}

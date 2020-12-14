@@ -35,6 +35,7 @@ require (
 	github.com/pkg/xattr v0.4.1
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/segmentio/go-env v1.1.0 // indirect
+	github.com/tigerwill90/fastcdc v1.2.2
 	github.com/tj/go-dropbox v0.0.0-20171107035848-42dd2be3662d // indirect
 	github.com/tmc/keyring v0.0.0-20171121202319-839169085ae1 // indirect
 	github.com/ungerik/go-dry v0.0.0-20180411133923-654ae31114c8 // indirect
