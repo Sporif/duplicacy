@@ -7,7 +7,6 @@ require (
 	github.com/Azure/go-autorest v10.15.5+incompatible // indirect
 	github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a
 	github.com/aws/aws-sdk-go v1.30.7
-	github.com/bkaradzic/go-lz4 v1.0.0
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dnaeon/go-vcr v1.1.0 // indirect
@@ -24,6 +23,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.3.5 // indirect
 	github.com/guelfey/go.dbus v0.0.0-20131113121618-f6a3a2366cc3 // indirect
+	github.com/klauspost/compress v1.11.3
 	github.com/klauspost/cpuid v1.3.1 // indirect
 	github.com/klauspost/reedsolomon v1.9.9
 	github.com/kr/pretty v0.2.1 // indirect

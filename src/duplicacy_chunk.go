@@ -6,7 +6,6 @@ package duplicacy
 
 import (
 	"bytes"
-	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -21,7 +20,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/bkaradzic/go-lz4"
+	"github.com/klauspost/compress/zstd"
 	"github.com/klauspost/reedsolomon"
 	"github.com/minio/highwayhash"
 )
@@ -44,6 +43,54 @@ func ReleaseChunkBuffer(buffer *bytes.Buffer) {
 	case chunkBufferPool <- buffer:
 	default:
 		LOG_INFO("CHUNK_BUFFER", "Discarding a free chunk buffer due to a full pool")
+	}
+}
+
+var zstdEncodersPool chan *zstd.Encoder = make(chan *zstd.Encoder, runtime.NumCPU())
+
+func AllocateZstdEncoder(buffer *bytes.Buffer) (enc *zstd.Encoder) {
+	var err error
+	select {
+	case enc = <-zstdEncodersPool:
+		enc.Reset(buffer)
+	default:
+		enc, err = zstd.NewWriter(buffer, zstd.WithEncoderLevel(zstd.SpeedFastest))
+		if err != nil {
+			LOG_ERROR("CHUNK_BUFFER", "Could not allocate new Zstd encoder")
+		}
+	}
+	return enc
+}
+
+func ReleaseZstdEncoder(enc *zstd.Encoder) {
+	select {
+	case zstdEncodersPool <- enc:
+	default:
+		LOG_INFO("CHUNK_BUFFER", "Discarding a free Zstd encoder due to a full pool")
+	}
+}
+
+var zstdDecodersPool chan *zstd.Decoder = make(chan *zstd.Decoder, runtime.NumCPU())
+
+func AllocateZstdDecoder(buffer *bytes.Buffer) (dec *zstd.Decoder) {
+	var err error
+	select {
+	case dec = <-zstdDecodersPool:
+		dec.Reset(buffer)
+	default:
+		dec, err = zstd.NewReader(buffer)
+		if err != nil {
+			LOG_ERROR("CHUNK_BUFFER", "Could not allocate new Zstd decoder")
+		}
+	}
+	return dec
+}
+
+func ReleaseZstdDecoder(dec *zstd.Decoder) {
+	select {
+	case zstdDecodersPool <- dec:
+	default:
+		LOG_INFO("CHUNK_BUFFER", "Discarding a free Zstd decoder due to a full pool")
 	}
 }
 
@@ -257,28 +304,17 @@ func (chunk *Chunk) Encrypt(encryptionKey []byte, derivationKey string, isSnapsh
 
 	// offset is either 0 or the length of banner + nonce
 
-	if chunk.config.CompressionLevel >= -1 && chunk.config.CompressionLevel <= 9 {
-		deflater, _ := zlib.NewWriterLevel(encryptedBuffer, chunk.config.CompressionLevel)
-		deflater.Write(chunk.buffer.Bytes())
-		deflater.Close()
-	} else if chunk.config.CompressionLevel == DEFAULT_COMPRESSION_LEVEL {
-		encryptedBuffer.Write([]byte("LZ4 "))
-		// Make sure we have enough space in encryptedBuffer
-		availableLength := encryptedBuffer.Cap() - len(encryptedBuffer.Bytes())
-		maximumLength := lz4.CompressBound(len(chunk.buffer.Bytes()))
-		if availableLength < maximumLength {
-			encryptedBuffer.Grow(maximumLength - availableLength)
-		}
-		written, err := lz4.Encode(encryptedBuffer.Bytes()[offset+4:], chunk.buffer.Bytes())
-		if err != nil {
-			return fmt.Errorf("LZ4 compression error: %v", err)
-		}
-		// written is actually encryptedBuffer[offset + 4:], but we need to move the write pointer
-		// and this seems to be the only way
-		encryptedBuffer.Write(written)
-	} else {
-		return fmt.Errorf("Invalid compression level: %d", chunk.config.CompressionLevel)
+	zstdEncoder := AllocateZstdEncoder(encryptedBuffer)
+
+	_, err = zstdEncoder.Write(chunk.buffer.Bytes())
+	if err != nil {
+		zstdEncoder.Close()
+		ReleaseZstdEncoder(zstdEncoder)
+		return fmt.Errorf("ZSTD compression error: %v", err)
 	}
+
+	zstdEncoder.Close()
+	ReleaseZstdEncoder(zstdEncoder)
 
 	if len(encryptionKey) > 0 {
 
@@ -591,35 +627,13 @@ func (chunk *Chunk) Decrypt(encryptionKey []byte, derivationKey string) (err err
 
 	encryptedBuffer.Read(encryptedBuffer.Bytes()[:offset])
 
-	compressed := encryptedBuffer.Bytes()
-	if len(compressed) > 4 && string(compressed[:4]) == "LZ4 " {
-		chunk.buffer.Reset()
-		decompressed, err := lz4.Decode(chunk.buffer.Bytes(), encryptedBuffer.Bytes()[4:])
-		if err != nil {
-			return err
-		}
-
-		chunk.buffer.Write(decompressed)
-		chunk.hasher = chunk.config.NewKeyedHasher(chunk.config.HashKey)
-		chunk.hasher.Write(decompressed)
-		chunk.hash = nil
-		return nil
-	}
-	inflater, err := zlib.NewReader(encryptedBuffer)
-	if err != nil {
-		return err
-	}
-
-	defer inflater.Close()
-
 	chunk.buffer.Reset()
 	chunk.hasher = chunk.config.NewKeyedHasher(chunk.config.HashKey)
 	chunk.hash = nil
 
-	if _, err = io.Copy(chunk, inflater); err != nil {
-		return err
-	}
-
-	return nil
+	zstdDecoder := AllocateZstdDecoder(encryptedBuffer)
+	_, err = io.Copy(chunk, zstdDecoder)
+	ReleaseZstdDecoder(zstdDecoder)
+	return err
 
 }

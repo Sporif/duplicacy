@@ -327,6 +327,14 @@ func (downloader *ChunkDownloader) Stop() {
 
 	for i := 0; i < downloader.threads; i++ {
 		downloader.stopChannel <- true
+		select {
+		case dec := <-zstdDecodersPool:
+			if dec != nil {
+				dec.Close()
+			}
+		default:
+			LOG_TRACE("CHUNK_BUFFER", "No Zstd decoder to close")
+		}
 	}
 }
 
