@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	blake2 "github.com/minio/blake2b-simd"
+	"github.com/zeebo/blake3"
 )
 
 // If encryption is turned off, use this key for HMAC-SHA256 or chunk ID generation etc.
@@ -295,7 +295,13 @@ func (config *Config) PutChunk(chunk *Chunk) {
 
 func (config *Config) NewKeyedHasher(key []byte) hash.Hash {
 	if config.CompressionLevel == DEFAULT_COMPRESSION_LEVEL {
-		hasher, err := blake2.New(&blake2.Config{Size: 32, Key: key})
+		const blake3KeySize = 32
+		if len(key) < blake3KeySize {
+			var xKey [blake3KeySize]byte
+			blake3.DeriveKey("duplicacy blake3 derived key v1", key, xKey[:blake3KeySize])
+			key = xKey[:blake3KeySize]
+		}
+		hasher, err := blake3.NewKeyed(key)
 		if err != nil {
 			LOG_ERROR("HASH_KEY", "Invalid hash key: %x", key)
 		}
@@ -340,7 +346,7 @@ func (config *Config) NewFileHasher() hash.Hash {
 	if SkipFileHash {
 		return &DummyHasher{}
 	} else if config.CompressionLevel == DEFAULT_COMPRESSION_LEVEL {
-		hasher, _ := blake2.New(&blake2.Config{Size: 32})
+		hasher := blake3.New()
 		return hasher
 	} else {
 		return sha256.New()

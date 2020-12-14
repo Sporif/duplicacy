@@ -28,7 +28,6 @@ require (
 	github.com/klauspost/reedsolomon v1.9.9
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/marstr/guid v1.1.0 // indirect
-	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
 	github.com/minio/highwayhash v1.0.1
 	github.com/mmcloughlin/avo v0.0.0-20200803215136-443f81d77104 // indirect
 	github.com/ncw/swift v1.0.50
@@ -40,6 +39,7 @@ require (
 	github.com/tmc/keyring v0.0.0-20171121202319-839169085ae1 // indirect
 	github.com/ungerik/go-dry v0.0.0-20180411133923-654ae31114c8 // indirect
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
+	github.com/zeebo/blake3 v0.1.0
 	go.opencensus.io v0.22.3 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
