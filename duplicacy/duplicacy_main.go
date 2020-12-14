@@ -1421,7 +1421,7 @@ func main() {
 				},
 				cli.IntFlag{
 					Name:     "iterations",
-					Usage:    "the number of iterations used in storage key derivation (default is 16384)",
+					Usage:    "the number of iterations used in storage key derivation (default is 3)",
 					Argument: "<i>",
 				},
 				cli.StringFlag{
@@ -1880,7 +1880,7 @@ func main() {
 				},
 				cli.IntFlag{
 					Name:     "iterations",
-					Usage:    "the number of iterations used in storage key derivation (default is 16384)",
+					Usage:    "the number of iterations used in storage key derivation (default is 3)",
 					Argument: "<i>",
 				},
 			},
@@ -1914,7 +1914,7 @@ func main() {
 				},
 				cli.IntFlag{
 					Name:     "iterations",
-					Usage:    "the number of iterations used in storage key derivation (default is 16384)",
+					Usage:    "the number of iterations used in storage key derivation (default is 3)",
 					Argument: "<i>",
 				},
 				cli.StringFlag{

@@ -6,7 +6,6 @@ package duplicacy
 
 import (
 	"bufio"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gilbertchen/gopass"
-	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/crypto/argon2"
 )
 
 var RunInBackground bool = false
@@ -157,7 +156,7 @@ func RateLimitedCopy(writer io.Writer, reader io.Reader, rate int) (written int6
 
 // GenerateKeyFromPassword generates a key from the password.
 func GenerateKeyFromPassword(password string, salt []byte, iterations int) []byte {
-	return pbkdf2.Key([]byte(password), salt, iterations, 32, sha256.New)
+	return argon2.IDKey([]byte(password), salt, uint32(iterations), 64*1024, 2, 32)
 }
 
 // Get password from preference, env, but don't start any keyring request

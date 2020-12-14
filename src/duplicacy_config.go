@@ -42,7 +42,7 @@ var CONFIG_BANNER = "duplicacy\001"
 var CONFIG_SALT_LENGTH = 32
 
 // The default iterations for key derivation
-var CONFIG_DEFAULT_ITERATIONS = 16384
+var CONFIG_DEFAULT_ITERATIONS = 3
 
 type Config struct {
 	CompressionLevel int `json:"compression-level"`

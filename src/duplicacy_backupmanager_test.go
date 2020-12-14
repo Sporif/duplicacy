@@ -241,11 +241,11 @@ func TestBackupManager(t *testing.T) {
 	}
 
 	if testFixedChunkSize {
-		if !ConfigStorage(storage, 16384, 100, 64*1024, 64*1024, 64*1024, password, nil, false, "", dataShards, parityShards) {
+		if !ConfigStorage(storage, 3, 100, 64*1024, 64*1024, 64*1024, password, nil, false, "", dataShards, parityShards) {
 			t.Errorf("Failed to initialize the storage")
 		}
 	} else {
-		if !ConfigStorage(storage, 16384, 100, 64*1024, 256*1024, 16*1024, password, nil, false, "", dataShards, parityShards) {
+		if !ConfigStorage(storage, 3, 100, 64*1024, 256*1024, 16*1024, password, nil, false, "", dataShards, parityShards) {
 			t.Errorf("Failed to initialize the storage")
 		}
 	}
@@ -503,7 +503,7 @@ func TestPersistRestore(t *testing.T) {
 	time.Sleep(time.Duration(delay) * time.Second)
 	cleanStorage(unencStorage)
 
-	if !ConfigStorage(unencStorage, 16384, 100, 64*1024, 256*1024, 16*1024, "", nil, false, "", 0, 0) {
+	if !ConfigStorage(unencStorage, 3, 100, 64*1024, 256*1024, 16*1024, "", nil, false, "", 0, 0) {
 		t.Errorf("Failed to initialize the unencrypted storage")
 	}
 	time.Sleep(time.Duration(delay) * time.Second)
@@ -522,7 +522,7 @@ func TestPersistRestore(t *testing.T) {
 	time.Sleep(time.Duration(delay) * time.Second)
 	cleanStorage(storage)
 
-	if !ConfigStorage(storage, 16384, 100, 64*1024, 256*1024, 16*1024, password, unencConfig, true, "", 0, 0) {
+	if !ConfigStorage(storage, 3, 100, 64*1024, 256*1024, 16*1024, password, unencConfig, true, "", 0, 0) {
 		t.Errorf("Failed to initialize the encrypted storage")
 	}
 	time.Sleep(time.Duration(delay) * time.Second)
