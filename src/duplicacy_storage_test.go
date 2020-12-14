@@ -30,7 +30,7 @@ var testFixedChunkSize bool
 var testRSAEncryption bool
 var testErasureCoding bool
 
-func init() {
+func TestMain(m *testing.M) {
 	flag.StringVar(&testStorageName, "storage", "", "the test storage to use")
 	flag.IntVar(&testRateLimit, "limit-rate", 0, "maximum transfer speed in kbytes/sec")
 	flag.BoolVar(&testQuickMode, "quick", false, "quick test")
@@ -39,6 +39,7 @@ func init() {
 	flag.BoolVar(&testRSAEncryption, "rsa", false, "enable RSA encryption")
 	flag.BoolVar(&testErasureCoding, "erasure-coding", false, "enable Erasure Coding")
 	flag.Parse()
+	os.Exit(m.Run())
 }
 
 func loadStorage(localStoragePath string, threads int) (Storage, error) {
