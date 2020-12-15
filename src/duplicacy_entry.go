@@ -84,7 +84,7 @@ func CreateEntryFromFileInfo(fileInfo os.FileInfo, directory string) *Entry {
 	entry := &Entry{
 		Path: path,
 		Size: fileInfo.Size(),
-		Time: fileInfo.ModTime().Unix(),
+		Time: fileInfo.ModTime().UnixNano(),
 		Mode: uint32(mode),
 	}
 
@@ -316,10 +316,8 @@ func (entry *Entry) RestoreMetadata(fullPath string, fileInfo *os.FileInfo, setO
 		}
 	}
 
-	// Only set the time if the file is not a symlink
-	if !entry.IsLink() && (*fileInfo).ModTime().Unix() != entry.Time {
-		modifiedTime := time.Unix(entry.Time, 0)
-		err := os.Chtimes(fullPath, modifiedTime, modifiedTime)
+	if (*fileInfo).ModTime().UnixNano() != entry.Time {
+		err := Chtimes(fullPath, entry.Time, entry.IsLink())
 		if err != nil {
 			LOG_ERROR("RESTORE_CHTIME", "Failed to set the modification time: %v", err)
 			return false

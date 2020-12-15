@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -108,6 +109,15 @@ func GetOwner(entry *Entry, fileInfo *os.FileInfo) {
 
 func SetOwner(fullPath string, entry *Entry, fileInfo *os.FileInfo) bool {
 	return true
+}
+
+func Chtimes(name string, mtime int64, isLink bool) error {
+	if !isLink {
+		t := time.Unix(0, mtime)
+		return os.Chtimes(name, t, t)
+	} else {
+		return nil
+	}
 }
 
 func (entry *Entry) ReadAttributes(top string) {

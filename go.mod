@@ -45,7 +45,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sys v0.0.0-20200409092240-59c9f1ba88fa // indirect
+	golang.org/x/sys v0.0.0-20200409092240-59c9f1ba88fa
 	golang.org/x/tools v0.0.0-20200925191224-5d1fdd8fa346 // indirect
 	google.golang.org/api v0.21.0
 	google.golang.org/appengine v1.6.5 // indirect

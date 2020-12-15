@@ -12,8 +12,10 @@ import (
 	"path"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/pkg/xattr"
+	"golang.org/x/sys/unix"
 )
 
 func Readlink(path string) (isRegular bool, s string, err error) {
@@ -45,6 +47,17 @@ func SetOwner(fullPath string, entry *Entry, fileInfo *os.FileInfo) bool {
 	}
 
 	return true
+}
+
+func Chtimes(name string, mtime int64, isLink bool) error {
+	if !isLink {
+		t := time.Unix(0, mtime)
+		return os.Chtimes(name, t, t)
+	} else {
+		t := unix.NsecToTimeval(mtime)
+		tv := []unix.Timeval{t, t}
+		return unix.Lutimes(name, tv)
+	}
 }
 
 func (entry *Entry) ReadAttributes(top string) {
