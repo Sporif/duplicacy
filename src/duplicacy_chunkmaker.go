@@ -7,8 +7,6 @@ package duplicacy
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -22,9 +20,6 @@ type ChunkMaker struct {
 	maximumChunkSize int
 	minimumChunkSize int
 	bufferCapacity   int
-
-	hashMask    uint64
-	randomTable [256]uint64
 
 	buffer      []byte
 	bufferSize  int
@@ -50,7 +45,6 @@ func CreateChunkMaker(config *Config, hashOnly bool) *ChunkMaker {
 	}
 
 	maker := &ChunkMaker{
-		hashMask:         uint64(config.AverageChunkSize - 1),
 		maximumChunkSize: config.MaximumChunkSize,
 		minimumChunkSize: config.MinimumChunkSize,
 		bufferCapacity:   config.MaximumChunkSize,
@@ -60,15 +54,6 @@ func CreateChunkMaker(config *Config, hashOnly bool) *ChunkMaker {
 
 	if hashOnly {
 		maker.hashOnlyChunk = CreateChunk(config, false)
-	}
-
-	randomData := sha256.Sum256(config.ChunkSeed)
-
-	for i := 0; i < 64; i++ {
-		for j := 0; j < 4; j++ {
-			maker.randomTable[4*i+j] = binary.LittleEndian.Uint64(randomData[8*j : 8*j+8])
-		}
-		randomData = sha256.Sum256(randomData[:])
 	}
 
 	maker.buffer = make([]byte, maker.bufferCapacity)
