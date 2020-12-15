@@ -773,6 +773,33 @@ func (manager *BackupManager) Restore(top string, revision int, inPlace bool, qu
 		inPlace = true
 	}
 
+	// Prepend include patterns with parent directories so their metadata is restored
+	if len(patterns) > 0 {
+		inserted := 0
+		for i, pattern := range patterns {
+			i += inserted
+			if pattern[0] == '+' {
+				newPath := pattern[1:]
+				for strings.Contains(newPath, "/") {
+					newPath = path.Dir(newPath)
+					found := false
+					newPattern := `+` + newPath + `/`
+					for _, ele := range patterns {
+						if ele == newPattern {
+							found = true
+							break
+						}
+					}
+					if !found {
+						patterns = append(patterns[:i+1], patterns[i:]...)
+						patterns[i] = newPattern
+						inserted++
+					}
+				}
+			}
+		}
+	}
+
 	if len(patterns) > 0 {
 		for _, pattern := range patterns {
 			LOG_TRACE("RESTORE_PATTERN", "%s", pattern)
