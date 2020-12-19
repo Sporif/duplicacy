@@ -600,9 +600,9 @@ func TestPersistRestore(t *testing.T) {
 
 	// test for corrupt files and -persist
 	// corrupt a chunk
-	chunkToCorrupt1 := "/4d/538e5dfd2b08e782bfeb56d1360fb5d7eb9d8c4b2531cc2fca79efbaec910c"
+	chunkToCorrupt1 := "/10/c1c8e92cf2fe25da2344cd56a1595abb33d0cd81356775493135804591a842"
 	// this should affect file1
-	chunkToCorrupt2 := "/2b/f953a766d0196ce026ae259e76e3c186a0e4bcd3ce10f1571d17f86f0a5497"
+	chunkToCorrupt2 := "/e2/21aee2177f93e6cc0d479e695bb3065c6110faf9c1a6c26af9b8b19277362c"
 	// this should affect dir1/file3
 
 	for i := 0; i < 2; i++ {
