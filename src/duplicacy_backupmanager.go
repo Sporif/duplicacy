@@ -760,18 +760,13 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 // serve as a local cache to avoid download chunks available locally.  It is perfectly ok for 'base' to be
 // the same as 'top'.  'quickMode' will bypass files with unchanged sizes and timestamps.  'deleteMode' will
 // remove local files that don't exist in the snapshot. 'patterns' is used to include/exclude certain files.
-func (manager *BackupManager) Restore(top string, revision int, inPlace bool, quickMode bool, threads int, overwrite bool,
+func (manager *BackupManager) Restore(top string, revision int, quickMode bool, threads int, overwrite bool,
 	deleteMode bool, setOwner bool, showStatistics bool, patterns []string, allowFailures bool) int {
 
 	startTime := time.Now().Unix()
 
-	LOG_DEBUG("RESTORE_PARAMETERS", "top: %s, revision: %d, in-place: %t, quick: %t, delete: %t",
-		top, revision, inPlace, quickMode, deleteMode)
-
-	if !strings.HasPrefix(GetDuplicacyPreferencePath(), top) {
-		LOG_INFO("RESTORE_INPLACE", "Forcing in-place mode with a non-default preference path")
-		inPlace = true
-	}
+	LOG_DEBUG("RESTORE_PARAMETERS", "top: %s, revision: %d, quick: %t, delete: %t",
+		top, revision, quickMode, deleteMode)
 
 	// Prepend include patterns with parent directories so their metadata is restored
 	if len(patterns) > 0 {
@@ -951,8 +946,6 @@ func (manager *BackupManager) Restore(top string, revision int, inPlace bool, qu
 
 	chunkMaker := CreateChunkMaker(manager.config, true)
 
-	startDownloadingTime := time.Now().Unix()
-
 	// Now download files one by one
 	for _, file := range fileEntries {
 
@@ -1001,8 +994,7 @@ func (manager *BackupManager) Restore(top string, revision int, inPlace bool, qu
 			continue
 		}
 
-		downloaded, err := manager.RestoreFile(chunkDownloader, chunkMaker, file, top, inPlace, overwrite, showStatistics,
-			totalFileSize, downloadedFileSize, startDownloadingTime, allowFailures)
+		downloaded, err := manager.RestoreFile(chunkDownloader, chunkMaker, file, top, overwrite, showStatistics, allowFailures)
 		if err != nil {
 			// RestoreFile returned an error; if allowFailures is false RestoerFile would error out and not return so here
 			// we just need to show a warning
@@ -1225,14 +1217,12 @@ func (manager *BackupManager) UploadSnapshot(chunkMaker *ChunkMaker, uploader *C
 	return totalSnapshotChunkSize, numberOfNewSnapshotChunks, totalUploadedSnapshotChunkSize, totalUploadedSnapshotChunkBytes
 }
 
-// Restore downloads a file from the storage.  If 'inPlace' is false, the download file is saved first to a temporary
-// file under the .duplicacy directory and then replaces the existing one.  Otherwise, the existing file will be
-// overwritten directly.
+// Restore downloads a file from the storage.
 // Return: true, nil:    Restored file;
 //         false, nil:   Skipped file;
 //         false, error: Failure to restore file (only if allowFailures == true)
-func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chunkMaker *ChunkMaker, entry *Entry, top string, inPlace bool, overwrite bool,
-	showStatistics bool, totalFileSize int64, downloadedFileSize int64, startTime int64, allowFailures bool) (bool, error) {
+func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chunkMaker *ChunkMaker, entry *Entry, top string, overwrite bool,
+	showStatistics bool, allowFailures bool) (bool, error) {
 
 	LOG_TRACE("DOWNLOAD_START", "Downloading %s", entry.Path)
 
@@ -1272,7 +1262,7 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 	if err != nil {
 		if os.IsNotExist(err) {
 			// macOS has no sparse file support
-			if inPlace && entry.Size > 100*1024*1024 && runtime.GOOS != "darwin" {
+			if entry.Size > 100*1024*1024 && runtime.GOOS != "darwin" {
 				// Create an empty sparse file
 				existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 				if err != nil {
@@ -1315,118 +1305,97 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 	fileHash := ""
 	if existingFile != nil {
 
-		if inPlace {
-			// In inplace mode, we only consider chunks in the existing file with the same offsets, so we
-			// break the original file at offsets retrieved from the backup
-			fileHasher := manager.config.NewFileHasher()
-			buffer := make([]byte, 64*1024)
-			err = nil
-			isSkipped := false
-			// We set to read one more byte so the file hash will be different if the file to be restored is a
-			// truncated portion of the existing file
-			for i := entry.StartChunk; i <= entry.EndChunk+1; i++ {
-				hasher := manager.config.NewKeyedHasher(manager.config.HashKey)
-				chunkSize := 0
-				if i == entry.StartChunk {
-					chunkSize = chunkDownloader.taskList[i].chunkLength - entry.StartOffset
-				} else if i == entry.EndChunk {
-					chunkSize = entry.EndOffset
-				} else if i > entry.StartChunk && i < entry.EndChunk {
-					chunkSize = chunkDownloader.taskList[i].chunkLength
-				} else {
-					chunkSize = 1 // the size of extra chunk beyond EndChunk
-				}
-				count := 0
+		// We only consider chunks in the existing file with the same offsets, so we
+		// break the original file at offsets retrieved from the backup
+		fileHasher := manager.config.NewFileHasher()
+		buffer := make([]byte, 64*1024)
+		err = nil
+		isSkipped := false
+		// We set to read one more byte so the file hash will be different if the file to be restored is a
+		// truncated portion of the existing file
+		for i := entry.StartChunk; i <= entry.EndChunk+1; i++ {
+			hasher := manager.config.NewKeyedHasher(manager.config.HashKey)
+			chunkSize := 0
+			if i == entry.StartChunk {
+				chunkSize = chunkDownloader.taskList[i].chunkLength - entry.StartOffset
+			} else if i == entry.EndChunk {
+				chunkSize = entry.EndOffset
+			} else if i > entry.StartChunk && i < entry.EndChunk {
+				chunkSize = chunkDownloader.taskList[i].chunkLength
+			} else {
+				chunkSize = 1 // the size of extra chunk beyond EndChunk
+			}
+			count := 0
 
-				if isNewFile {
-					if hash, found := knownHashes[chunkSize]; found {
-						// We have read the same number of zeros before, so we just retrieve the hash from the map
-						existingChunks = append(existingChunks, hash)
-						existingLengths = append(existingLengths, chunkSize)
-						offsetMap[hash] = offset
-						lengthMap[hash] = chunkSize
-						offset += int64(chunkSize)
-						isSkipped = true
-						continue
-					}
-				}
-
-				if isSkipped {
-					_, err := existingFile.Seek(offset, 0)
-					if err != nil {
-						LOG_ERROR("DOWNLOAD_SEEK", "Failed to seek to offset %d: %v", offset, err)
-					}
-					isSkipped = false
-				}
-
-				for count < chunkSize {
-					n := chunkSize - count
-					if n > cap(buffer) {
-						n = cap(buffer)
-					}
-					n, err := existingFile.Read(buffer[:n])
-					if n > 0 {
-						hasher.Write(buffer[:n])
-						fileHasher.Write(buffer[:n])
-						count += n
-					}
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						LOG_ERROR("DOWNLOAD_SPLIT", "Failed to read existing file: %v", err)
-						return false, nil
-					}
-				}
-				if count > 0 {
-					hash := string(hasher.Sum(nil))
+			if isNewFile {
+				if hash, found := knownHashes[chunkSize]; found {
+					// We have read the same number of zeros before, so we just retrieve the hash from the map
 					existingChunks = append(existingChunks, hash)
 					existingLengths = append(existingLengths, chunkSize)
 					offsetMap[hash] = offset
 					lengthMap[hash] = chunkSize
 					offset += int64(chunkSize)
-					if isNewFile {
-						knownHashes[chunkSize] = hash
-					}
+					isSkipped = true
+					continue
 				}
+			}
 
+			if isSkipped {
+				_, err := existingFile.Seek(offset, 0)
+				if err != nil {
+					LOG_ERROR("DOWNLOAD_SEEK", "Failed to seek to offset %d: %v", offset, err)
+				}
+				isSkipped = false
+			}
+
+			for count < chunkSize {
+				n := chunkSize - count
+				if n > cap(buffer) {
+					n = cap(buffer)
+				}
+				n, err := existingFile.Read(buffer[:n])
+				if n > 0 {
+					hasher.Write(buffer[:n])
+					fileHasher.Write(buffer[:n])
+					count += n
+				}
 				if err == io.EOF {
 					break
 				}
+				if err != nil {
+					LOG_ERROR("DOWNLOAD_SPLIT", "Failed to read existing file: %v", err)
+					return false, nil
+				}
+			}
+			if count > 0 {
+				hash := string(hasher.Sum(nil))
+				existingChunks = append(existingChunks, hash)
+				existingLengths = append(existingLengths, chunkSize)
+				offsetMap[hash] = offset
+				lengthMap[hash] = chunkSize
+				offset += int64(chunkSize)
+				if isNewFile {
+					knownHashes[chunkSize] = hash
+				}
 			}
 
-			fileHash = hex.EncodeToString(fileHasher.Sum(nil))
-
-			if fileHash == entry.Hash && fileHash != "" {
-				LOG_TRACE("DOWNLOAD_SKIP", "File %s unchanged (by hash)", entry.Path)
-				return false, nil
+			if err == io.EOF {
+				break
 			}
+		}
 
-			// fileHash != entry.Hash, warn/error depending on -overwrite option
-			if !overwrite && !isNewFile {
-				LOG_WERROR(allowFailures, "DOWNLOAD_OVERWRITE",
-					"File %s already exists.  Please specify the -overwrite option to overwrite", entry.Path)
-				return false, fmt.Errorf("file exists")
-			}
+		fileHash = hex.EncodeToString(fileHasher.Sum(nil))
 
-		} else {
-			// If it is not inplace, we want to reuse any chunks in the existing file regardless their offets, so
-			// we run the chunk maker to split the original file.
-			chunkMaker.ForEachChunk(
-				existingFile,
-				func(chunk *Chunk, final bool) {
-					hash := chunk.GetHash()
-					chunkSize := chunk.GetLength()
-					existingChunks = append(existingChunks, hash)
-					existingLengths = append(existingLengths, chunkSize)
-					offsetMap[hash] = offset
-					lengthMap[hash] = chunkSize
-					offset += int64(chunkSize)
-				},
-				func(fileSize int64, hash string) (io.Reader, bool) {
-					fileHash = hash
-					return nil, false
-				})
+		if fileHash == entry.Hash && fileHash != "" {
+			LOG_TRACE("DOWNLOAD_SKIP", "File %s unchanged (by hash)", entry.Path)
+			return false, nil
+		}
+
+		// fileHash != entry.Hash, warn/error depending on -overwrite option
+		if !overwrite && !isNewFile {
+			LOG_WERROR(allowFailures, "DOWNLOAD_OVERWRITE",
+				"File %s already exists.  Please specify the -overwrite option to overwrite", entry.Path)
+			return false, fmt.Errorf("file exists")
 		}
 
 		// This is an additional check comparing fileHash to entry.Hash above, so this should no longer occur
@@ -1444,194 +1413,93 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 
 	chunkDownloader.Prefetch(entry)
 
-	if inPlace {
+	if existingFile == nil {
+		// Create an empty file
+		existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			LOG_ERROR("DOWNLOAD_CREATE", "Failed to create the file %s for in-place writing", fullPath)
+		}
+	} else {
+		// Close and reopen in a different mode
+		existingFile.Close()
+		existingFile, err = os.OpenFile(fullPath, os.O_RDWR, 0)
+		if err != nil {
+			LOG_ERROR("DOWNLOAD_OPEN", "Failed to open the file %s for in-place writing", fullPath)
+			return false, nil
+		}
+	}
 
-		LOG_TRACE("DOWNLOAD_INPLACE", "Updating %s in place", fullPath)
+	existingFile.Seek(0, 0)
 
-		if existingFile == nil {
-			// Create an empty file
-			existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	j := 0
+	offset = 0
+	existingOffset := int64(0)
+	hasher := manager.config.NewFileHasher()
+
+	for i := entry.StartChunk; i <= entry.EndChunk; i++ {
+
+		for existingOffset < offset && j < len(existingChunks) {
+			existingOffset += int64(existingLengths[j])
+			j++
+		}
+
+		hash := chunkDownloader.taskList[i].chunkHash
+
+		start := 0
+		if i == entry.StartChunk {
+			start = entry.StartOffset
+		}
+		end := chunkDownloader.taskList[i].chunkLength
+		if i == entry.EndChunk {
+			end = entry.EndOffset
+		}
+
+		_, err = existingFile.Seek(offset, 0)
+		if err != nil {
+			LOG_ERROR("DOWNLOAD_SEEK", "Failed to set the offset to %d for file %s: %v", offset, fullPath, err)
+			return false, nil
+		}
+
+		// Check if the chunk is available in the existing file
+		if existingOffset == offset && start == 0 && j < len(existingChunks) &&
+			end == existingLengths[j] && existingChunks[j] == hash {
+			// Identical chunk found.  Run it through the hasher in order to compute the file hash.
+			_, err := io.CopyN(hasher, existingFile, int64(existingLengths[j]))
 			if err != nil {
-				LOG_ERROR("DOWNLOAD_CREATE", "Failed to create the file %s for in-place writing", fullPath)
+				LOG_ERROR("DOWNLOAD_READ", "Failed to read the existing chunk %s: %v", hash, err)
+				return false, nil
+			}
+			if IsDebugging() {
+				LOG_DEBUG("DOWNLOAD_UNCHANGED", "Chunk %s is unchanged", manager.config.GetChunkIDFromHash(hash))
 			}
 		} else {
-			// Close and reopen in a different mode
-			existingFile.Close()
-			existingFile, err = os.OpenFile(fullPath, os.O_RDWR, 0)
+			chunk := chunkDownloader.WaitForChunk(i)
+			if chunk.isBroken {
+				return false, fmt.Errorf("chunk %s is corrupted", manager.config.GetChunkIDFromHash(hash))
+			}
+			_, err = existingFile.Write(chunk.GetBytes()[start:end])
 			if err != nil {
-				LOG_ERROR("DOWNLOAD_OPEN", "Failed to open the file %s for in-place writing", fullPath)
+				LOG_ERROR("DOWNLOAD_WRITE", "Failed to write to the file: %v", err)
 				return false, nil
 			}
+			hasher.Write(chunk.GetBytes()[start:end])
 		}
 
-		existingFile.Seek(0, 0)
+		offset += int64(end - start)
+	}
 
-		j := 0
-		offset := int64(0)
-		existingOffset := int64(0)
-		hasher := manager.config.NewFileHasher()
+	// Must truncate the file if the new size is smaller
+	if err = existingFile.Truncate(offset); err != nil {
+		LOG_ERROR("DOWNLOAD_TRUNCATE", "Failed to truncate the file at %d: %v", offset, err)
+		return false, nil
+	}
 
-		for i := entry.StartChunk; i <= entry.EndChunk; i++ {
-
-			for existingOffset < offset && j < len(existingChunks) {
-				existingOffset += int64(existingLengths[j])
-				j++
-			}
-
-			hash := chunkDownloader.taskList[i].chunkHash
-
-			start := 0
-			if i == entry.StartChunk {
-				start = entry.StartOffset
-			}
-			end := chunkDownloader.taskList[i].chunkLength
-			if i == entry.EndChunk {
-				end = entry.EndOffset
-			}
-
-			_, err = existingFile.Seek(offset, 0)
-			if err != nil {
-				LOG_ERROR("DOWNLOAD_SEEK", "Failed to set the offset to %d for file %s: %v", offset, fullPath, err)
-				return false, nil
-			}
-
-			// Check if the chunk is available in the existing file
-			if existingOffset == offset && start == 0 && j < len(existingChunks) &&
-				end == existingLengths[j] && existingChunks[j] == hash {
-				// Identical chunk found.  Run it through the hasher in order to compute the file hash.
-				_, err := io.CopyN(hasher, existingFile, int64(existingLengths[j]))
-				if err != nil {
-					LOG_ERROR("DOWNLOAD_READ", "Failed to read the existing chunk %s: %v", hash, err)
-					return false, nil
-				}
-				if IsDebugging() {
-					LOG_DEBUG("DOWNLOAD_UNCHANGED", "Chunk %s is unchanged", manager.config.GetChunkIDFromHash(hash))
-				}
-			} else {
-				chunk := chunkDownloader.WaitForChunk(i)
-				if chunk.isBroken {
-					return false, fmt.Errorf("chunk %s is corrupted", manager.config.GetChunkIDFromHash(hash))
-				}
-				_, err = existingFile.Write(chunk.GetBytes()[start:end])
-				if err != nil {
-					LOG_ERROR("DOWNLOAD_WRITE", "Failed to write to the file: %v", err)
-					return false, nil
-				}
-				hasher.Write(chunk.GetBytes()[start:end])
-			}
-
-			offset += int64(end - start)
-		}
-
-		// Must truncate the file if the new size is smaller
-		if err = existingFile.Truncate(offset); err != nil {
-			LOG_ERROR("DOWNLOAD_TRUNCATE", "Failed to truncate the file at %d: %v", offset, err)
-			return false, nil
-		}
-
-		// Verify the download by hash
-		hash := hex.EncodeToString(hasher.Sum(nil))
-		if hash != entry.Hash && hash != "" && entry.Hash != "" && !strings.HasPrefix(entry.Hash, "#") {
-			LOG_WERROR(allowFailures, "DOWNLOAD_HASH", "File %s has a mismatched hash: %s instead of %s (in-place)",
-				fullPath, "", entry.Hash)
-			return false, fmt.Errorf("file corrupt (hash mismatch)")
-		}
-
-	} else {
-
-		// Create the temporary file.
-		newFile, err = os.OpenFile(temporaryPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-		if err != nil {
-			LOG_ERROR("DOWNLOAD_OPEN", "Failed to open file for writing: %v", err)
-			return false, nil
-		}
-
-		hasher := manager.config.NewFileHasher()
-
-		var localChunk *Chunk
-		defer chunkDownloader.config.PutChunk(localChunk)
-
-		var offset int64
-		for i := entry.StartChunk; i <= entry.EndChunk; i++ {
-
-			hasLocalCopy := false
-			var data []byte
-
-			hash := chunkDownloader.taskList[i].chunkHash
-			if existingFile != nil {
-				if offset, ok := offsetMap[hash]; ok {
-					// Retrieve the chunk from the existing file.
-					length := lengthMap[hash]
-					existingFile.Seek(offset, 0)
-					if localChunk == nil {
-						localChunk = chunkDownloader.config.GetChunk()
-					}
-					localChunk.Reset(true)
-					_, err = io.CopyN(localChunk, existingFile, int64(length))
-					if err == nil {
-						hasLocalCopy = true
-						data = localChunk.GetBytes()
-						if IsDebugging() {
-							LOG_DEBUG("DOWNLOAD_LOCAL_COPY", "Local copy for chunk %s is available",
-								manager.config.GetChunkIDFromHash(hash))
-						}
-					}
-				}
-			}
-
-			if !hasLocalCopy {
-				chunk := chunkDownloader.WaitForChunk(i)
-				if chunk.isBroken {
-					return false, fmt.Errorf("chunk %s is corrupted", manager.config.GetChunkIDFromHash(hash))
-				}
-				// If the chunk was downloaded from the storage, we may still need a portion of it.
-				start := 0
-				if i == entry.StartChunk {
-					start = entry.StartOffset
-				}
-				end := chunk.GetLength()
-				if i == entry.EndChunk {
-					end = entry.EndOffset
-				}
-				data = chunk.GetBytes()[start:end]
-			}
-
-			_, err = newFile.Write(data)
-			if err != nil {
-				LOG_ERROR("DOWNLOAD_WRITE", "Failed to write file: %v", err)
-				return false, nil
-			}
-
-			hasher.Write(data)
-			offset += int64(len(data))
-		}
-
-		hash := hex.EncodeToString(hasher.Sum(nil))
-		if hash != entry.Hash && hash != "" && entry.Hash != "" && !strings.HasPrefix(entry.Hash, "#") {
-			LOG_WERROR(allowFailures, "DOWNLOAD_HASH", "File %s has a mismatched hash: %s instead of %s",
-				entry.Path, hash, entry.Hash)
-			return false, fmt.Errorf("file corrupt (hash mismatch)")
-		}
-
-		if existingFile != nil {
-			existingFile.Close()
-			existingFile = nil
-		}
-
-		newFile.Close()
-		newFile = nil
-
-		err = os.Remove(fullPath)
-		if err != nil && !os.IsNotExist(err) {
-			LOG_ERROR("DOWNLOAD_REMOVE", "Failed to remove the old file: %v", err)
-			return false, nil
-		}
-
-		err = os.Rename(temporaryPath, fullPath)
-		if err != nil {
-			LOG_ERROR("DOWNLOAD_RENAME", "Failed to rename the file %s to %s: %v", temporaryPath, fullPath, err)
-			return false, nil
-		}
+	// Verify the download by hash
+	hash := hex.EncodeToString(hasher.Sum(nil))
+	if hash != entry.Hash && hash != "" && entry.Hash != "" && !strings.HasPrefix(entry.Hash, "#") {
+		LOG_WERROR(allowFailures, "DOWNLOAD_HASH", "File %s has a mismatched hash: %s instead of %s (in-place)",
+			fullPath, "", entry.Hash)
+		return false, fmt.Errorf("file corrupt (hash mismatch)")
 	}
 
 	if !showStatistics {
