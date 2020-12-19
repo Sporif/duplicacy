@@ -1226,23 +1226,14 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 
 	LOG_TRACE("DOWNLOAD_START", "Downloading %s", entry.Path)
 
-	var existingFile, newFile *os.File
+	var existingFile *os.File
 	var err error
 
-	preferencePath := GetDuplicacyPreferencePath()
-	temporaryPath := path.Join(preferencePath, "temporary")
 	fullPath := joinPath(top, entry.Path)
 
 	defer func() {
 		if existingFile != nil {
 			existingFile.Close()
-		}
-		if newFile != nil {
-			newFile.Close()
-		}
-
-		if temporaryPath != fullPath {
-			os.Remove(temporaryPath)
 		}
 	}()
 
@@ -1261,38 +1252,49 @@ func (manager *BackupManager) RestoreFile(chunkDownloader *ChunkDownloader, chun
 	existingFile, err = os.Open(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// New files need NOCOW attribute to be set before writing
+			var nocowAttr int32 = 0x00800000
+			if entry.FileAttribute&nocowAttr != 0 && runtime.GOOS == "linux" {
+				existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+				if err != nil {
+					LOG_ERROR("DOWNLOAD_CREATE", "Failed to create initial NOCOW file: %v", err)
+					return false, nil
+				}
+				SetAttr(existingFile, nocowAttr)
+				isNewFile = true
+			}
+
 			// macOS has no sparse file support
 			if entry.Size > 100*1024*1024 && runtime.GOOS != "darwin" {
 				// Create an empty sparse file
-				existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-				if err != nil {
-					LOG_ERROR("DOWNLOAD_CREATE", "Failed to create the file %s for in-place writing: %v", fullPath, err)
-					return false, nil
+				if !isNewFile {
+					existingFile, err = os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+					if err != nil {
+						LOG_ERROR("DOWNLOAD_CREATE", "Failed to create the file %s for in-place writing: %v", fullPath, err)
+						return false, nil
+					}
 				}
 
-				n := int64(1)
-				// There is a go bug on Windows (https://github.com/golang/go/issues/21681) that causes Seek to fail
-				// if the lower 32 bit of the offset argument is 0xffffffff.  Therefore we need to avoid that value by increasing n.
-				if uint32(entry.Size) == 0 && (entry.Size>>32) > 0 {
-					n = int64(2)
-				}
-				_, err = existingFile.Seek(entry.Size-n, 0)
+				_, err = existingFile.Seek(entry.Size-int64(1), 0)
 				if err != nil {
 					LOG_ERROR("DOWNLOAD_CREATE", "Failed to resize the initial file %s for in-place writing: %v", fullPath, err)
 					return false, nil
 				}
-				_, err = existingFile.Write([]byte("\x00\x00")[:n])
+				_, err = existingFile.Write([]byte("\x00"))
 				if err != nil {
 					LOG_ERROR("DOWNLOAD_CREATE", "Failed to initialize the sparse file %s for in-place writing: %v", fullPath, err)
 					return false, nil
 				}
+				isNewFile = true
+			}
+
+			if existingFile != nil {
 				existingFile.Close()
 				existingFile, err = os.Open(fullPath)
 				if err != nil {
 					LOG_ERROR("DOWNLOAD_OPEN", "Can't reopen the initial file just created: %v", err)
 					return false, nil
 				}
-				isNewFile = true
 			}
 		} else {
 			LOG_TRACE("DOWNLOAD_OPEN", "Can't open the existing file: %v", err)
