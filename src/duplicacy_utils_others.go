@@ -57,10 +57,10 @@ func SetOwner(fullPath string, entry *Entry, fileInfo *os.FileInfo) bool {
 
 func Chtimes(name string, mtime int64, isLink bool) error {
 	if !isLink {
-		t := time.Unix(0, mtime)
+		t := time.Unix(mtime, 0)
 		return os.Chtimes(name, t, t)
 	} else {
-		t := unix.NsecToTimeval(mtime)
+		t := unix.NsecToTimeval(mtime * 1e9)
 		tv := []unix.Timeval{t, t}
 		return unix.Lutimes(name, tv)
 	}

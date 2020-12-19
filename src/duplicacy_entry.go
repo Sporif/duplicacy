@@ -85,7 +85,7 @@ func CreateEntryFromFileInfo(fileInfo os.FileInfo, directory string) *Entry {
 	entry := &Entry{
 		Path: path,
 		Size: fileInfo.Size(),
-		Time: fileInfo.ModTime().UnixNano(),
+		Time: fileInfo.ModTime().Unix(),
 		Mode: uint32(mode),
 	}
 
