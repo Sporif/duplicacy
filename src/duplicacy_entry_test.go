@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gilbertchen/xattr"
+	"github.com/pkg/xattr"
 )
 
 func TestEntrySort(t *testing.T) {
@@ -224,11 +224,12 @@ func TestEntryList(t *testing.T) {
 // TestEntryExcludeByAttribute tests the excludeByAttribute parameter to the ListEntries function
 func TestEntryExcludeByAttribute(t *testing.T) {
 
-	if !(runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
-		t.Skip("skipping test not darwin or linux")
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows")
 	}
 
-	testDir := filepath.Join(os.TempDir(), "duplicacy_test")
+	// Can't use os.TempDir() as attributes in 'user.' namespaces don't work on tmpfs on Linux
+	testDir := "duplicacy_test"
 
 	os.RemoveAll(testDir)
 	os.MkdirAll(testDir, 0700)
@@ -264,7 +265,15 @@ func TestEntryExcludeByAttribute(t *testing.T) {
 	for _, file := range DATA {
 		fullPath := filepath.Join(testDir, file)
 		if strings.Contains(file, "exclude") {
-			xattr.Setxattr(fullPath, "com.apple.metadata:com_apple_backup_excludeItem", []byte("com.apple.backupd"))
+			var err error
+			if runtime.GOOS == "darwin" {
+				err = xattr.Set(fullPath, "com.apple.metadata:com_apple_backup_excludeItem", []byte("com.apple.backupd"))
+			} else {
+				err = xattr.Set(fullPath, "user.duplicacy_exclude", []byte(""))
+			}
+			if err != nil {
+				t.Errorf("xattr.Set(%s) returned an error: %s", fullPath, err)
+			}
 		}
 	}
 

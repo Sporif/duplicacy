@@ -7,6 +7,6 @@ package duplicacy
 import ()
 
 func excludedByAttribute(attirbutes map[string][]byte) bool {
-	_, ok := attirbutes["duplicacy_exclude"]
+	_, ok := attirbutes["user.duplicacy_exclude"]
 	return ok
 }
