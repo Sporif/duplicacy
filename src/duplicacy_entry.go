@@ -45,7 +45,8 @@ type Entry struct {
 	EndChunk    int
 	EndOffset   int
 
-	Attributes map[string][]byte
+	FileAttribute int32
+	Attributes    map[string][]byte
 }
 
 // CreateEntry creates an entry from file properties.
@@ -171,6 +172,13 @@ func (entry *Entry) UnmarshalJSON(description []byte) (err error) {
 		}
 	}
 
+	entry.FileAttribute = 0
+	if value, ok = object["fileattribute"]; ok {
+		if _, ok = value.(float64); ok {
+			entry.FileAttribute = int32(value.(float64))
+		}
+	}
+
 	if value, ok = object["attributes"]; ok {
 		if attributes, ok := value.(map[string]interface{}); !ok {
 			return fmt.Errorf("Attributes are invalid for file '%s' in the snapshot", entry.Path)
@@ -242,6 +250,10 @@ func (entry *Entry) convertToObject(encodeName bool) map[string]interface{} {
 	if entry.UID != -1 && entry.GID != -1 {
 		object["uid"] = entry.UID
 		object["gid"] = entry.GID
+	}
+
+	if entry.FileAttribute > 0 {
+		object["fileattribute"] = entry.FileAttribute
 	}
 
 	if len(entry.Attributes) > 0 {
@@ -322,6 +334,10 @@ func (entry *Entry) RestoreMetadata(fullPath string, fileInfo *os.FileInfo, setO
 			LOG_ERROR("RESTORE_CHTIME", "Failed to set the modification time: %v", err)
 			return false
 		}
+	}
+
+	if entry.FileAttribute > 0 {
+		entry.SetFileAttributesToFile(fullPath)
 	}
 
 	if len(entry.Attributes) > 0 {
@@ -517,6 +533,8 @@ func ListEntries(top string, path string, fileList *[]*Entry, patterns []string,
 				entry = newEntry
 			}
 		}
+
+		entry.ReadFileAttribute(top)
 
 		if !discardAttributes {
 			entry.ReadAttributes(top)

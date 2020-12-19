@@ -120,6 +120,19 @@ func Chtimes(name string, mtime int64, isLink bool) error {
 	}
 }
 
+func GetAttr(f *os.File) int32 {
+	return 0
+}
+
+func SetAttr(f *os.File, attr int32) {
+}
+
+func (entry *Entry) ReadFileAttribute(top string) {
+}
+
+func (entry *Entry) SetFileAttributesToFile(fullPath string) {
+}
+
 func (entry *Entry) ReadAttributes(top string) {
 }
 

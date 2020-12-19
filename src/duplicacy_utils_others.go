@@ -13,9 +13,15 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/pkg/xattr"
 	"golang.org/x/sys/unix"
+)
+
+const (
+	FS_IOC_GETFLAGS uintptr = 0x80086601
+	FS_IOC_SETFLAGS uintptr = 0x40086602
 )
 
 func Readlink(path string) (isRegular bool, s string, err error) {
@@ -58,6 +64,40 @@ func Chtimes(name string, mtime int64, isLink bool) error {
 		tv := []unix.Timeval{t, t}
 		return unix.Lutimes(name, tv)
 	}
+}
+
+func ioctl(f *os.File, request uintptr, attrp *int32) error {
+	argp := uintptr(unsafe.Pointer(attrp))
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), request, argp)
+	if errno != 0 {
+		return os.NewSyscallError("ioctl", errno)
+	}
+	return nil
+}
+
+func GetAttr(f *os.File) int32 {
+	attr := int32(-1)
+	ioctl(f, FS_IOC_GETFLAGS, &attr)
+	return attr
+}
+
+func SetAttr(f *os.File, attr int32) {
+	ioctl(f, FS_IOC_SETFLAGS, &attr)
+}
+
+func (entry *Entry) ReadFileAttribute(top string) {
+	file, _ := os.Open(filepath.Join(top, entry.Path))
+	defer file.Close()
+	entry.FileAttribute = GetAttr(file)
+}
+
+func (entry *Entry) SetFileAttributesToFile(fullPath string) {
+	file, err := os.Open(fullPath)
+	defer file.Close()
+	if err != nil {
+		LOG_ERROR("RESTORE_FILE_ATTR", "Failed to open file %s: %v", entry.Path, err)
+	}
+	SetAttr(file, entry.FileAttribute)
 }
 
 func (entry *Entry) ReadAttributes(top string) {
