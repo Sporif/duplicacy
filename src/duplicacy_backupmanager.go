@@ -710,7 +710,7 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 		LOG_INFO("BACKUP_STATS", "All chunks: %d total, %s bytes; %d new, %s bytes, %s bytes uploaded",
 			len(localSnapshot.ChunkHashes)+totalSnapshotChunks,
 			PrettyNumber(totalFileChunkLength+totalSnapshotChunkLength),
-			int(numberOfNewFileChunks)+numberOfNewSnapshotChunks,
+			numberOfNewFileChunks+numberOfNewSnapshotChunks,
 			PrettyNumber(totalUploadedFileChunkLength+totalUploadedSnapshotChunkLength),
 			PrettyNumber(totalUploadedFileChunkBytes+totalUploadedSnapshotChunkBytes))
 
@@ -1116,7 +1116,7 @@ func (encoder *fileEncoder) NextFile() (io.Reader, bool) {
 // sequences of chunks, and uploads these chunks, and finally the snapshot file.
 func (manager *BackupManager) UploadSnapshot(chunkMaker *ChunkMaker, uploader *ChunkUploader, top string, snapshot *Snapshot,
 	chunkCache map[string]bool) (totalSnapshotChunkSize int64,
-	numberOfNewSnapshotChunks int, totalUploadedSnapshotChunkSize int64,
+	numberOfNewSnapshotChunks int64, totalUploadedSnapshotChunkSize int64,
 	totalUploadedSnapshotChunkBytes int64) {
 
 	uploader.snapshotCache = manager.snapshotCache
@@ -1126,9 +1126,9 @@ func (manager *BackupManager) UploadSnapshot(chunkMaker *ChunkMaker, uploader *C
 			LOG_DEBUG("CHUNK_CACHE", "Skipped snapshot chunk %s in cache", chunk.GetID())
 		} else {
 			if uploadSize > 0 {
-				numberOfNewSnapshotChunks++
-				totalUploadedSnapshotChunkSize += int64(chunkSize)
-				totalUploadedSnapshotChunkBytes += int64(uploadSize)
+				atomic.AddInt64(&numberOfNewSnapshotChunks, 1)
+				atomic.AddInt64(&totalUploadedSnapshotChunkSize, int64(chunkSize))
+				atomic.AddInt64(&totalUploadedSnapshotChunkBytes, int64(uploadSize))
 			} else {
 				LOG_DEBUG("CHUNK_EXIST", "Skipped snapshot chunk %s in the storage", chunk.GetID())
 			}
