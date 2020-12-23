@@ -211,7 +211,7 @@ func TestBackupManager(t *testing.T) {
 	createRandomFile(testDir+"/repository1/file2", maxFileSize)
 	createRandomFile(testDir+"/repository1/dir1/file3", maxFileSize)
 
-	threads := 1
+	threads := 4
 
 	storage, err := loadStorage(testDir+"/storage", threads)
 	if err != nil {
@@ -260,7 +260,7 @@ func TestBackupManager(t *testing.T) {
 	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", false, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 	SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
-	failedFiles := backupManager.Restore(testDir+"/repository2", threads /*quickMode=*/, false, threads /*overwrite=*/, true,
+	failedFiles := backupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
 		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 
@@ -481,7 +481,7 @@ func TestPersistRestore(t *testing.T) {
 	createRandomFileSeeded(testDir+"/repository1/file2", maxFileSize, 2)
 	createRandomFileSeeded(testDir+"/repository1/dir1/file3", maxFileSize, 3)
 
-	threads := 1
+	threads := 4
 
 	password := "duplicacy"
 
@@ -593,7 +593,7 @@ func TestPersistRestore(t *testing.T) {
 
 	// test restore all uncorrupted to repository3
 	SetDuplicacyPreferencePath(testDir + "/repository3/.duplicacy")
-	failedFiles := unencBackupManager.Restore(testDir+"/repository3", threads /*quickMode=*/, false, threads /*overwrite=*/, false,
+	failedFiles := unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
 		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 	checkAllUncorrupted("/repository3")
@@ -629,7 +629,7 @@ func TestPersistRestore(t *testing.T) {
 		// test restore corrupted, corrupted files will have hash failures
 		os.RemoveAll(testDir + "/repository2")
 		SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
-		failedFiles = unencBackupManager.Restore(testDir+"/repository2", threads /*quickMode=*/, false, threads /*overwrite=*/, false,
+		failedFiles = unencBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
@@ -638,7 +638,7 @@ func TestPersistRestore(t *testing.T) {
 
 		os.RemoveAll(testDir + "/repository2")
 		SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
-		failedFiles = encBackupManager.Restore(testDir+"/repository2", threads /*quickMode=*/, false, threads /*overwrite=*/, false,
+		failedFiles = encBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
@@ -649,11 +649,11 @@ func TestPersistRestore(t *testing.T) {
 		// with overwrite=true, corrupted file1 from unenc will be restored correctly from enc
 		// the latter will not touch the existing file3 with correct hash
 		os.RemoveAll(testDir + "/repository2")
-		failedFiles = unencBackupManager.Restore(testDir+"/repository2", threads /*quickMode=*/, false, threads /*overwrite=*/, false,
+		failedFiles = unencBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
-		failedFiles = encBackupManager.Restore(testDir+"/repository2", threads /*quickMode=*/, false, threads /*overwrite=*/, true,
+		failedFiles = encBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository2")
@@ -661,12 +661,12 @@ func TestPersistRestore(t *testing.T) {
 		// restore to repository3, with overwrite and allowFailures (true/false), quickMode = false (use hashes)
 		// should always succeed as uncorrupted files already exist with correct hash, so these will be ignored
 		SetDuplicacyPreferencePath(testDir + "/repository3/.duplicacy")
-		failedFiles = unencBackupManager.Restore(testDir+"/repository3", threads /*quickMode=*/, false, threads /*overwrite=*/, true,
+		failedFiles = unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository3")
 
-		failedFiles = unencBackupManager.Restore(testDir+"/repository3", threads /*quickMode=*/, false, threads /*overwrite=*/, true,
+		failedFiles = unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
 			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository3")
