@@ -7,12 +7,8 @@
 package duplicacy
 
 import (
-	"github.com/gilbertchen/keyring"
+	"github.com/zalando/go-keyring"
 )
-
-func SetKeyringFile(path string) {
-	// We only use keyring file on Windows
-}
 
 func keyringGet(key string) (value string) {
 	value, err := keyring.Get("duplicacy", key)

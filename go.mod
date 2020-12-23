@@ -14,15 +14,11 @@ require (
 	github.com/gilbertchen/cli v1.2.1-0.20160223210219-1de0a1836ce9
 	github.com/gilbertchen/go-dropbox v0.0.0-20201103213208-2233fa1dd846
 	github.com/gilbertchen/go-ole v1.2.0
-	github.com/gilbertchen/go.dbus v0.0.0-20190607191240-8591994fa32f // indirect
 	github.com/gilbertchen/goamz v0.0.0-20170712012135-eada9f4e8cc2
 	github.com/gilbertchen/gopass v0.0.0-20170109162249-bf9dde6d0d2c
-	github.com/gilbertchen/keyring v0.0.0-20170923175943-8855f5632086
-	github.com/gilbertchen/xattr v0.0.0-20160926155429-68e7a6806b01
 	github.com/goamz/goamz v0.0.0-20180131231218-8b901b531db8 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.3.5 // indirect
-	github.com/guelfey/go.dbus v0.0.0-20131113121618-f6a3a2366cc3 // indirect
 	github.com/klauspost/compress v1.11.3
 	github.com/klauspost/cpuid v1.3.1 // indirect
 	github.com/klauspost/reedsolomon v1.9.9
@@ -37,9 +33,9 @@ require (
 	github.com/segmentio/go-env v1.1.0 // indirect
 	github.com/tigerwill90/fastcdc v1.2.2
 	github.com/tj/go-dropbox v0.0.0-20171107035848-42dd2be3662d // indirect
-	github.com/tmc/keyring v0.0.0-20171121202319-839169085ae1 // indirect
 	github.com/ungerik/go-dry v0.0.0-20180411133923-654ae31114c8 // indirect
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec // indirect
+	github.com/zalando/go-keyring v0.1.0
 	github.com/zeebo/blake3 v0.1.0
 	go.opencensus.io v0.22.3 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9

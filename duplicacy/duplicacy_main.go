@@ -64,9 +64,6 @@ func getRepositoryPreference(context *cli.Context, storageName string) (reposito
 	}
 	duplicacy.LoadPreferences(repository)
 
-	preferencePath := duplicacy.GetDuplicacyPreferencePath()
-	duplicacy.SetKeyringFile(path.Join(preferencePath, "keyring"))
-
 	if storageName == "" {
 		storageName = context.String("storage")
 	}
@@ -319,7 +316,6 @@ func configRepository(context *cli.Context, init bool) {
 			}
 		}
 		duplicacy.SetDuplicacyPreferencePath(preferencePath)
-		duplicacy.SetKeyringFile(path.Join(preferencePath, "keyring"))
 
 	} else {
 		repository, _ = getRepositoryPreference(context, "")
@@ -1289,7 +1285,6 @@ func infoStorage(context *cli.Context) {
 	if repository != "" {
 		preferencePath := path.Join(repository, duplicacy.DUPLICACY_DIRECTORY)
 		duplicacy.SetDuplicacyPreferencePath(preferencePath)
-		duplicacy.SetKeyringFile(path.Join(preferencePath, "keyring"))
 	}
 
 	resetPasswords := context.Bool("reset-passwords")
