@@ -240,7 +240,7 @@ func checkTestSnapshots(manager *SnapshotManager, expectedSnapshots int, expecte
 // If an hour ago is yesterday one more snapshot than normal will be deleted with any prune retention policy
 // This would otherwise cause the retention policy tests to fail between 00:00 and 01:00
 func getSnapshotMinus(now int64) (minus int) {
-	startDate := time.Unix(now - 3600, 0).In(time.Now().Location())
+	startDate := time.Unix(now-3600, 0).In(time.Now().Location())
 	yesterday := time.Now().AddDate(0, 0, -1)
 	if startDate.Day() == yesterday.Day() {
 		minus = 1
@@ -484,11 +484,11 @@ func TestPruneWithRetentionPolicy(t *testing.T) {
 
 	t.Logf("Removing snapshot vm1@host1 -k 0:20 with --exclusive")
 	snapshotManager.PruneSnapshots("vm1@host1", "vm1@host1", []int{}, []string{}, []string{"0:20"}, false, true, []string{}, false, false, false, 1)
-	checkTestSnapshots(snapshotManager, 19 - minus, 0)
+	checkTestSnapshots(snapshotManager, 19-minus, 0)
 
 	t.Logf("Removing snapshot vm1@host1 -k 3:14 -k 2:7 with --exclusive")
 	snapshotManager.PruneSnapshots("vm1@host1", "vm1@host1", []int{}, []string{}, []string{"3:14", "2:7"}, false, true, []string{}, false, false, false, 1)
-	checkTestSnapshots(snapshotManager, 12 - minus, 0)
+	checkTestSnapshots(snapshotManager, 12-minus, 0)
 }
 
 func TestPruneWithRetentionPolicyAndTag(t *testing.T) {
@@ -518,11 +518,11 @@ func TestPruneWithRetentionPolicyAndTag(t *testing.T) {
 		createTestSnapshot(snapshotManager, "vm1@host1", i+1, now-int64(30-i)*day-3600, now-int64(30-i)*day-60, []string{chunkHashes[i]}, tag)
 	}
 
-	checkTestSnapshots(snapshotManager, 30 - minus, 0)
+	checkTestSnapshots(snapshotManager, 30-minus, 0)
 
 	t.Logf("Removing snapshot vm1@host1 0:20 with --exclusive and --tag manual")
 	snapshotManager.PruneSnapshots("vm1@host1", "vm1@host1", []int{}, []string{"manual"}, []string{"0:7"}, false, true, []string{}, false, false, false, 1)
-	checkTestSnapshots(snapshotManager, 22 - minus, 0)
+	checkTestSnapshots(snapshotManager, 22-minus, 0)
 }
 
 // Test that an unreferenced fossil shouldn't be removed as it may be the result of another prune job in-progress.
