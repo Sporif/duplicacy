@@ -2,8 +2,6 @@
 // Free for personal use and commercial trial
 // Commercial use requires per-user licenses available from https://duplicacy.com
 
-// +build !windows
-
 package duplicacy
 
 import (
