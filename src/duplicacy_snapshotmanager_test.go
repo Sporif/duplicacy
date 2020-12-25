@@ -518,7 +518,7 @@ func TestPruneWithRetentionPolicyAndTag(t *testing.T) {
 		createTestSnapshot(snapshotManager, "vm1@host1", i+1, now-int64(30-i)*day-3600, now-int64(30-i)*day-60, []string{chunkHashes[i]}, tag)
 	}
 
-	checkTestSnapshots(snapshotManager, 30-minus, 0)
+	checkTestSnapshots(snapshotManager, 30, 0)
 
 	t.Logf("Removing snapshot vm1@host1 0:20 with --exclusive and --tag manual")
 	snapshotManager.PruneSnapshots("vm1@host1", "vm1@host1", []int{}, []string{"manual"}, []string{"0:7"}, false, true, []string{}, false, false, false, 1)
