@@ -502,7 +502,7 @@ func (downloader *ChunkDownloader) Download(threadIndex int, task ChunkDownloadT
 
 	downloadedChunkSize := atomic.AddInt64(&downloader.downloadedChunkSize, int64(chunk.GetLength()))
 
-	if (downloader.showStatistics || IsTracing()) && downloader.totalChunkSize > 0 {
+	if (downloader.showStatistics || IsTracing()) && atomic.LoadInt64(&downloader.totalChunkSize) > 0 {
 
 		now := time.Now().Unix()
 		if now <= downloader.startTime {
@@ -511,9 +511,9 @@ func (downloader *ChunkDownloader) Download(threadIndex int, task ChunkDownloadT
 		speed := downloadedChunkSize / (now - downloader.startTime)
 		remainingTime := int64(0)
 		if speed > 0 {
-			remainingTime = (downloader.totalChunkSize-downloadedChunkSize)/speed + 1
+			remainingTime = (atomic.LoadInt64(&downloader.totalChunkSize)-downloadedChunkSize)/speed + 1
 		}
-		percentage := float32(downloadedChunkSize * 1000 / downloader.totalChunkSize)
+		percentage := float32(downloadedChunkSize * 1000 / atomic.LoadInt64(&downloader.totalChunkSize))
 		LOG_INFO("DOWNLOAD_PROGRESS", "Downloaded chunk %d size %d, %sB/s %s %.1f%%",
 			task.chunkIndex+1, chunk.GetLength(),
 			PrettySize(speed), PrettyTime(remainingTime), percentage/10)

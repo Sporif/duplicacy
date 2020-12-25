@@ -211,7 +211,7 @@ func TestBackupManager(t *testing.T) {
 	createRandomFile(testDir+"/repository1/file2", maxFileSize)
 	createRandomFile(testDir+"/repository1/dir1/file3", maxFileSize)
 
-	threads := 4
+	threads := testThreads
 
 	storage, err := loadStorage(testDir+"/storage", threads)
 	if err != nil {
@@ -257,11 +257,11 @@ func TestBackupManager(t *testing.T) {
 	backupManager.SetupSnapshotCache("default")
 
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
-	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", false, false, 0, false)
+	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", testStats, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 	SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
 	failedFiles := backupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
-		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
+		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 
 	for _, f := range []string{"file1", "file2", "dir1/file3"} {
@@ -282,11 +282,11 @@ func TestBackupManager(t *testing.T) {
 	modifyFile(testDir+"/repository1/dir1/file3", 0.3)
 
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
-	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "second", false, false, 0, false)
+	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "second", testStats, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 	SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
 	failedFiles = backupManager.Restore(testDir+"/repository2", 2 /*quickMode=*/, true, threads /*overwrite=*/, true,
-		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
+		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 
 	for _, f := range []string{"file1", "file2", "dir1/file3"} {
@@ -303,7 +303,7 @@ func TestBackupManager(t *testing.T) {
 	os.Mkdir(testDir+"/repository1/dir2/dir3", 0700)
 	os.Mkdir(testDir+"/repository1/dir4", 0700)
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
-	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, false, threads, "third", false, false, 0, false)
+	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, false, threads, "third", testStats, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 
 	// Create some directories and files under repository2 that will be deleted during restore
@@ -315,7 +315,7 @@ func TestBackupManager(t *testing.T) {
 
 	SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
 	failedFiles = backupManager.Restore(testDir+"/repository2", 3 /*quickMode=*/, false, threads /*overwrite=*/, true,
-		/*deleteMode=*/ true /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
+		/*deleteMode=*/ true /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 
 	for _, f := range []string{"file1", "file2", "dir1/file3"} {
@@ -343,7 +343,7 @@ func TestBackupManager(t *testing.T) {
 	os.Remove(testDir + "/repository1/dir1/file3")
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
 	failedFiles = backupManager.Restore(testDir+"/repository1", 3 /*quickMode=*/, false, threads /*overwrite=*/, true,
-		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, []string{"+file2", "+dir1/file3", "-*"} /*allowFailures=*/, false)
+		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, []string{"+file2", "+dir1/file3", "-*"} /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 
 	for _, f := range []string{"file1", "file2", "dir1/file3"} {
@@ -359,24 +359,24 @@ func TestBackupManager(t *testing.T) {
 		t.Errorf("Expected 3 snapshots but got %d", numberOfSnapshots)
 	}
 	backupManager.SnapshotManager.CheckSnapshots( /*snapshotID*/ "host1" /*revisions*/, []int{1, 2, 3} /*tag*/, "",
-		/*showStatistics*/ false /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, 1 /*allowFailures*/, false)
+		/*showStatistics*/ testStats /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, threads /*allowFailures*/, false)
 	backupManager.SnapshotManager.PruneSnapshots("host1", "host1" /*revisions*/, []int{1} /*tags*/, nil /*retentions*/, nil,
-		/*exhaustive*/ false /*exclusive=*/, false /*ignoredIDs*/, nil /*dryRun*/, false /*deleteOnly*/, false /*collectOnly*/, false, 1)
+		/*exhaustive*/ false /*exclusive=*/, false /*ignoredIDs*/, nil /*dryRun*/, false /*deleteOnly*/, false /*collectOnly*/, false, threads)
 	numberOfSnapshots = backupManager.SnapshotManager.ListSnapshots( /*snapshotID*/ "host1" /*revisionsToList*/, nil /*tag*/, "" /*showFiles*/, false /*showChunks*/, false)
 	if numberOfSnapshots != 2 {
 		t.Errorf("Expected 2 snapshots but got %d", numberOfSnapshots)
 	}
 	backupManager.SnapshotManager.CheckSnapshots( /*snapshotID*/ "host1" /*revisions*/, []int{2, 3} /*tag*/, "",
-		/*showStatistics*/ false /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, 1 /*allowFailures*/, false)
-	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, false, threads, "fourth", false, false, 0, false)
+		/*showStatistics*/ testStats /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, threads /*allowFailures*/, false)
+	backupManager.Backup(testDir+"/repository1" /*quickMode=*/, false, threads, "fourth", testStats, false, 0, false)
 	backupManager.SnapshotManager.PruneSnapshots("host1", "host1" /*revisions*/, nil /*tags*/, nil /*retentions*/, nil,
-		/*exhaustive*/ false /*exclusive=*/, true /*ignoredIDs*/, nil /*dryRun*/, false /*deleteOnly*/, false /*collectOnly*/, false, 1)
+		/*exhaustive*/ false /*exclusive=*/, true /*ignoredIDs*/, nil /*dryRun*/, false /*deleteOnly*/, false /*collectOnly*/, false, threads)
 	numberOfSnapshots = backupManager.SnapshotManager.ListSnapshots( /*snapshotID*/ "host1" /*revisionsToList*/, nil /*tag*/, "" /*showFiles*/, false /*showChunks*/, false)
 	if numberOfSnapshots != 3 {
 		t.Errorf("Expected 3 snapshots but got %d", numberOfSnapshots)
 	}
 	backupManager.SnapshotManager.CheckSnapshots( /*snapshotID*/ "host1" /*revisions*/, []int{2, 3, 4} /*tag*/, "",
-		/*showStatistics*/ false /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, 1 /*allowFailures*/, false)
+		/*showStatistics*/ testStats /*showTabular*/, false /*checkFiles*/, false /*checkChunks*/, false /*searchFossils*/, false /*resurrect*/, false, threads /*allowFailures*/, false)
 
 	/*buf := make([]byte, 1<<16)
 	  runtime.Stack(buf, true)
@@ -481,7 +481,7 @@ func TestPersistRestore(t *testing.T) {
 	createRandomFileSeeded(testDir+"/repository1/file2", maxFileSize, 2)
 	createRandomFileSeeded(testDir+"/repository1/dir1/file3", maxFileSize, 3)
 
-	threads := 4
+	threads := testThreads
 
 	password := "duplicacy"
 
@@ -533,7 +533,7 @@ func TestPersistRestore(t *testing.T) {
 	unencBackupManager.SetupSnapshotCache("default")
 
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
-	unencBackupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", false, false, 0, false)
+	unencBackupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", testStats, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 
 	// do encrypted backup
@@ -542,7 +542,7 @@ func TestPersistRestore(t *testing.T) {
 	encBackupManager.SetupSnapshotCache("default")
 
 	SetDuplicacyPreferencePath(testDir + "/repository1/.duplicacy")
-	encBackupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", false, false, 0, false)
+	encBackupManager.Backup(testDir+"/repository1" /*quickMode=*/, true, threads, "first", testStats, false, 0, false)
 	time.Sleep(time.Duration(delay) * time.Second)
 
 	// check snapshots
@@ -594,7 +594,7 @@ func TestPersistRestore(t *testing.T) {
 	// test restore all uncorrupted to repository3
 	SetDuplicacyPreferencePath(testDir + "/repository3/.duplicacy")
 	failedFiles := unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
-		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
+		/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, false)
 	assertRestoreFailures(t, failedFiles, 0)
 	checkAllUncorrupted("/repository3")
 
@@ -630,7 +630,7 @@ func TestPersistRestore(t *testing.T) {
 		os.RemoveAll(testDir + "/repository2")
 		SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
 		failedFiles = unencBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
 		// check restore, expect file1 to be corrupted
@@ -639,7 +639,7 @@ func TestPersistRestore(t *testing.T) {
 		os.RemoveAll(testDir + "/repository2")
 		SetDuplicacyPreferencePath(testDir + "/repository2/.duplicacy")
 		failedFiles = encBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
 		// check restore, expect file3 to be corrupted
@@ -650,11 +650,11 @@ func TestPersistRestore(t *testing.T) {
 		// the latter will not touch the existing file3 with correct hash
 		os.RemoveAll(testDir + "/repository2")
 		failedFiles = unencBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, false,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 1)
 
 		failedFiles = encBackupManager.Restore(testDir+"/repository2", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository2")
 
@@ -662,12 +662,12 @@ func TestPersistRestore(t *testing.T) {
 		// should always succeed as uncorrupted files already exist with correct hash, so these will be ignored
 		SetDuplicacyPreferencePath(testDir + "/repository3/.duplicacy")
 		failedFiles = unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, false)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, false)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository3")
 
 		failedFiles = unencBackupManager.Restore(testDir+"/repository3", 1 /*quickMode=*/, false, threads /*overwrite=*/, true,
-			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, false /*patterns=*/, nil /*allowFailures=*/, true)
+			/*deleteMode=*/ false /*setowner=*/, false /*showStatistics=*/, testStats /*patterns=*/, nil /*allowFailures=*/, true)
 		assertRestoreFailures(t, failedFiles, 0)
 		checkAllUncorrupted("/repository3")
 	}

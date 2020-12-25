@@ -22,6 +22,7 @@ import (
 	"math/rand"
 )
 
+var testStats bool
 var testStorageName string
 var testRateLimit int
 var testQuickMode bool
@@ -31,6 +32,7 @@ var testRSAEncryption bool
 var testErasureCoding bool
 
 func TestMain(m *testing.M) {
+	flag.BoolVar(&testStats, "stats", false, "show statistics during test")
 	flag.StringVar(&testStorageName, "storage", "", "the test storage to use")
 	flag.IntVar(&testRateLimit, "limit-rate", 0, "maximum transfer speed in kbytes/sec")
 	flag.BoolVar(&testQuickMode, "quick", false, "quick test")
