@@ -453,7 +453,8 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 	// is the last file.
 	fileReader := CreateFileReader(shadowTop, modifiedEntries)
 
-	startUploadingTime := time.Now().Unix()
+	startUploadingTime := time.Now().UnixNano()
+	windowedRate := NewWindowedRate(100)
 
 	lastUploadingTime := time.Now().Unix()
 
@@ -541,18 +542,26 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 			uploadedModifiedFileSize := atomic.AddInt64(&uploadedModifiedFileSize, int64(chunkSize))
 
 			if (IsTracing() || showStatistics) && totalModifiedFileSize > 0 {
-				now := time.Now().Unix()
+				now := time.Now().UnixNano()
 				if now <= startUploadingTime {
 					now = startUploadingTime + 1
 				}
-				speed := uploadedModifiedFileSize / (now - startUploadingTime)
+				remainingSize := totalModifiedFileSize - uploadedModifiedFileSize
+				speed := (uploadedModifiedFileSize * 1e9) / (now - startUploadingTime)
 				remainingTime := int64(0)
 				if speed > 0 {
-					remainingTime = (totalModifiedFileSize-uploadedModifiedFileSize)/speed + 1
+					remainingTime = remainingSize/speed + 1
+				}
+				recentSpeed := windowedRate.ComputeAverage(uploadedModifiedFileSize)
+				recentRemainingTime := int64(0)
+				if recentSpeed > 0 {
+					recentRemainingTime = remainingSize/recentSpeed + 1
 				}
 				percentage := float32(uploadedModifiedFileSize * 1000 / totalModifiedFileSize)
-				LOG_INFO("UPLOAD_PROGRESS", "%s chunk %d size %d, %sB/s %s %.1f%%", action, chunkIndex,
-					chunkSize, PrettySize(speed), PrettyTime(remainingTime), percentage/10)
+				LOG_INFO("UPLOAD_PROGRESS", "%s chunk %d size %d, avg: %sB/s %s, recent: %sB/s %s %.1f%%",
+					action, chunkIndex,
+					chunkSize, PrettySize(speed), PrettyTime(remainingTime),
+					PrettySize(recentSpeed), PrettyTime(recentRemainingTime), percentage/10)
 			}
 
 			atomic.AddInt64(&numberOfCollectedChunks, 1)

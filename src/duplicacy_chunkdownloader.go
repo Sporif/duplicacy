@@ -55,6 +55,8 @@ type ChunkDownloader struct {
 	numberOfActiveChunks      int   // The number of chunks that is being downloaded or has been downloaded but not reclaimed
 
 	NumberOfFailedChunks int // The number of chunks that can't be downloaded
+
+	windowedRate WindowedRate // Rolling average speed of download
 }
 
 func CreateChunkDownloader(config *Config, storage Storage, snapshotCache *FileStorage, showStatistics bool, threads int, allowFailures bool) *ChunkDownloader {
@@ -74,7 +76,8 @@ func CreateChunkDownloader(config *Config, storage Storage, snapshotCache *FileS
 		stopChannel:       make(chan bool),
 		completionChannel: make(chan ChunkDownloadCompletion),
 
-		startTime: time.Now().Unix(),
+		startTime:    time.Now().UnixNano(),
+		windowedRate: NewWindowedRate(100),
 	}
 
 	// Start the downloading goroutines
@@ -501,22 +504,30 @@ func (downloader *ChunkDownloader) Download(threadIndex int, task ChunkDownloadT
 	}
 
 	downloadedChunkSize := atomic.AddInt64(&downloader.downloadedChunkSize, int64(chunk.GetLength()))
+	totalChunkSize := atomic.LoadInt64(&downloader.totalChunkSize)
 
-	if (downloader.showStatistics || IsTracing()) && atomic.LoadInt64(&downloader.totalChunkSize) > 0 {
+	if (downloader.showStatistics || IsTracing()) && totalChunkSize > 0 {
 
-		now := time.Now().Unix()
+		now := time.Now().UnixNano()
 		if now <= downloader.startTime {
 			now = downloader.startTime + 1
 		}
-		speed := downloadedChunkSize / (now - downloader.startTime)
+		remainingSize := totalChunkSize - downloadedChunkSize
+		speed := (downloadedChunkSize * 1e9) / (now - downloader.startTime)
 		remainingTime := int64(0)
 		if speed > 0 {
-			remainingTime = (atomic.LoadInt64(&downloader.totalChunkSize)-downloadedChunkSize)/speed + 1
+			remainingTime = remainingSize/speed + 1
 		}
-		percentage := float32(downloadedChunkSize * 1000 / atomic.LoadInt64(&downloader.totalChunkSize))
-		LOG_INFO("DOWNLOAD_PROGRESS", "Downloaded chunk %d size %d, %sB/s %s %.1f%%",
+		recentSpeed := downloader.windowedRate.ComputeAverage(downloadedChunkSize)
+		recentRemainingTime := int64(0)
+		if recentSpeed > 0 {
+			recentRemainingTime = remainingSize/recentSpeed + 1
+		}
+		percentage := float32(downloadedChunkSize * 1000 / totalChunkSize)
+		LOG_INFO("DOWNLOAD_PROGRESS", "Downloaded chunk %d size %d, avg: %sB/s %s, recent: %sB/s %s %.1f%%",
 			task.chunkIndex+1, chunk.GetLength(),
-			PrettySize(speed), PrettyTime(remainingTime), percentage/10)
+			PrettySize(speed), PrettyTime(remainingTime),
+			PrettySize(recentSpeed), PrettyTime(recentRemainingTime), percentage/10)
 	} else {
 		LOG_DEBUG("CHUNK_DOWNLOAD", "Chunk %s has been downloaded", chunkID)
 	}
