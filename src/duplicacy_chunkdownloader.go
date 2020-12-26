@@ -76,7 +76,7 @@ func CreateChunkDownloader(config *Config, storage Storage, snapshotCache *FileS
 		stopChannel:       make(chan bool),
 		completionChannel: make(chan ChunkDownloadCompletion),
 
-		startTime:    time.Now().UnixNano(),
+		startTime:    time.Now().Unix(),
 		windowedRate: NewWindowedRate(100),
 	}
 
@@ -508,12 +508,12 @@ func (downloader *ChunkDownloader) Download(threadIndex int, task ChunkDownloadT
 
 	if (downloader.showStatistics || IsTracing()) && totalChunkSize > 0 {
 
-		now := time.Now().UnixNano()
+		now := time.Now().Unix()
 		if now <= downloader.startTime {
 			now = downloader.startTime + 1
 		}
 		remainingSize := totalChunkSize - downloadedChunkSize
-		speed := (downloadedChunkSize * 1e9) / (now - downloader.startTime)
+		speed := downloadedChunkSize / (now - downloader.startTime)
 		remainingTime := int64(0)
 		if speed > 0 {
 			remainingTime = remainingSize/speed + 1

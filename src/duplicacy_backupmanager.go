@@ -453,7 +453,7 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 	// is the last file.
 	fileReader := CreateFileReader(shadowTop, modifiedEntries)
 
-	startUploadingTime := time.Now().UnixNano()
+	startUploadingTime := time.Now().Unix()
 	windowedRate := NewWindowedRate(100)
 
 	lastUploadingTime := time.Now().Unix()
@@ -542,12 +542,12 @@ func (manager *BackupManager) Backup(top string, quickMode bool, threads int, ta
 			uploadedModifiedFileSize := atomic.AddInt64(&uploadedModifiedFileSize, int64(chunkSize))
 
 			if (IsTracing() || showStatistics) && totalModifiedFileSize > 0 {
-				now := time.Now().UnixNano()
+				now := time.Now().Unix()
 				if now <= startUploadingTime {
 					now = startUploadingTime + 1
 				}
 				remainingSize := totalModifiedFileSize - uploadedModifiedFileSize
-				speed := (uploadedModifiedFileSize * 1e9) / (now - startUploadingTime)
+				speed := uploadedModifiedFileSize / (now - startUploadingTime)
 				remainingTime := int64(0)
 				if speed > 0 {
 					remainingTime = remainingSize/speed + 1
