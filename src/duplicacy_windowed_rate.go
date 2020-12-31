@@ -19,7 +19,7 @@ type WindowedRate struct {
 	values []ratePair
 }
 
-func NewWindowedRate(arrayCapacity int) WindowedRate {
+func NewWindowedRate(arrayCapacity int) *WindowedRate {
 	rpm := WindowedRate{}
 	rpm.arrayCapacity = arrayCapacity
 	rpm.insertIndex = -1
@@ -29,7 +29,7 @@ func NewWindowedRate(arrayCapacity int) WindowedRate {
 		rpm.values[i].insertedTime = time.Now().UnixNano()
 	}
 
-	return rpm
+	return &rpm
 }
 
 /**

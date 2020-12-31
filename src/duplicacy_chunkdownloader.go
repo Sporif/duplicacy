@@ -56,7 +56,7 @@ type ChunkDownloader struct {
 
 	NumberOfFailedChunks int // The number of chunks that can't be downloaded
 
-	windowedRate WindowedRate // Rolling average speed of download
+	windowedRate *WindowedRate // Rolling average speed of download
 }
 
 func CreateChunkDownloader(config *Config, storage Storage, snapshotCache *FileStorage, showStatistics bool, threads int, allowFailures bool) *ChunkDownloader {
