@@ -125,7 +125,7 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 						startNewChunk()
 					}
 					fileSize = 0
-					fileHasher = maker.config.NewFileHasher()
+					fileHasher.Reset()
 					isEOF = false
 				}
 			} else {
@@ -169,7 +169,7 @@ func (maker *ChunkMaker) ForEachChunk(reader io.Reader, endOfChunk func(chunk *C
 					return
 				} else {
 					fileSize = 0
-					fileHasher = maker.config.NewFileHasher()
+					fileHasher.Reset()
 				}
 
 				// Make new chunk if minimum chunksize has been gathered

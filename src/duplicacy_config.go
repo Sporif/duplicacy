@@ -346,8 +346,7 @@ func (config *Config) NewFileHasher() hash.Hash {
 	if SkipFileHash {
 		return &DummyHasher{}
 	} else if config.CompressionLevel == DEFAULT_COMPRESSION_LEVEL {
-		hasher := blake3.New()
-		return hasher
+		return blake3.New()
 	} else {
 		return sha256.New()
 	}
