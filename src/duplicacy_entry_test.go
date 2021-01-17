@@ -168,23 +168,10 @@ func TestEntryList(t *testing.T) {
 		}
 	}
 
-	directories := make([]*Entry, 0, 4)
-	directories = append(directories, CreateEntry("", 0, 0, 0))
-
-	entries := make([]*Entry, 0, 4)
-
-	for len(directories) > 0 {
-		directory := directories[len(directories)-1]
-		directories = directories[:len(directories)-1]
-		entries = append(entries, directory)
-		subdirectories, _, err := ListEntries(testDir, directory.Path, &entries, nil, "", false, false)
-		if err != nil {
-			t.Errorf("ListEntries(%s, %s) returned an error: %s", testDir, directory.Path, err)
-		}
-		directories = append(directories, subdirectories...)
+	entries, _, _, _, err := ListEntries(testDir, nil, "", 1024, false, false)
+	if err != nil {
+		t.Errorf("ListEntries(%s) returned an error: %s", testDir, err)
 	}
-
-	entries = entries[1:]
 
 	for _, entry := range entries {
 		t.Logf("entry: %s", entry.Path)
@@ -279,23 +266,11 @@ func TestEntryExcludeByAttribute(t *testing.T) {
 
 	for _, excludeByAttribute := range [2]bool{true, false} {
 		t.Logf("testing excludeByAttribute: %t", excludeByAttribute)
-		directories := make([]*Entry, 0, 4)
-		directories = append(directories, CreateEntry("", 0, 0, 0))
 
-		entries := make([]*Entry, 0, 4)
-
-		for len(directories) > 0 {
-			directory := directories[len(directories)-1]
-			directories = directories[:len(directories)-1]
-			entries = append(entries, directory)
-			subdirectories, _, err := ListEntries(testDir, directory.Path, &entries, nil, "", false, excludeByAttribute)
-			if err != nil {
-				t.Errorf("ListEntries(%s, %s) returned an error: %s", testDir, directory.Path, err)
-			}
-			directories = append(directories, subdirectories...)
+		entries, _, _, _, err := ListEntries(testDir, nil, "", 1024, excludeByAttribute, false)
+		if err != nil {
+			t.Errorf("ListEntries(%s) returned an error: %s", testDir, err)
 		}
-
-		entries = entries[1:]
 
 		for _, entry := range entries {
 			t.Logf("entry: %s", entry.Path)

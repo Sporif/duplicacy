@@ -19,6 +19,7 @@ require (
 	github.com/gilbertchen/goamz v0.0.0-20170712012135-eada9f4e8cc2
 	github.com/gilbertchen/gopass v0.0.0-20170109162249-bf9dde6d0d2c
 	github.com/goamz/goamz v0.0.0-20180131231218-8b901b531db8 // indirect
+	github.com/karrick/godirwalk v1.16.1
 	github.com/klauspost/compress v1.11.4
 	github.com/klauspost/cpuid/v2 v2.0.3 // indirect
 	github.com/klauspost/reedsolomon v1.9.10

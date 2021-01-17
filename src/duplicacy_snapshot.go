@@ -58,9 +58,7 @@ func CreateEmptySnapshot(id string) (snapshto *Snapshot) {
 
 // CreateSnapshotFromDirectory creates a snapshot from the local directory 'top'.  Only 'Files'
 // will be constructed, while 'ChunkHashes' and 'ChunkLengths' can only be populated after uploading.
-func CreateSnapshotFromDirectory(id string, top string, nobackupFile string, filtersFile string, excludeByAttribute bool) (snapshot *Snapshot, skippedDirectories []string,
-	skippedFiles []string, err error) {
-
+func CreateSnapshotFromDirectory(id string, top string, nobackupFile string, filtersFile string, excludeByAttribute bool) (snapshot *Snapshot, skippedDirectories []string, skippedFiles []string, err error) {
 	snapshot = &Snapshot{
 		ID:        id,
 		Revision:  0,
@@ -68,52 +66,26 @@ func CreateSnapshotFromDirectory(id string, top string, nobackupFile string, fil
 	}
 
 	var patterns []string
-
 	if filtersFile == "" {
 		filtersFile = joinPath(GetDuplicacyPreferencePath(), "filters")
 	}
 	patterns = ProcessFilters(filtersFile)
-
-	directories := make([]*Entry, 0, 256)
-	directories = append(directories, CreateEntry("", 0, 0, 0))
-
-	snapshot.Files = make([]*Entry, 0, 256)
 
 	attributeThreshold := 1024 * 1024
 	if attributeThresholdValue, found := os.LookupEnv("DUPLICACY_ATTRIBUTE_THRESHOLD"); found && attributeThresholdValue != "" {
 		attributeThreshold, _ = strconv.Atoi(attributeThresholdValue)
 	}
 
-	for len(directories) > 0 {
-
-		directory := directories[len(directories)-1]
-		directories = directories[:len(directories)-1]
-		snapshot.Files = append(snapshot.Files, directory)
-		subdirectories, skipped, err := ListEntries(top, directory.Path, &snapshot.Files, patterns, nobackupFile, snapshot.discardAttributes, excludeByAttribute)
-		if err != nil {
-			if directory.Path == "" {
-				LOG_ERROR("LIST_FAILURE", "Failed to list the repository root: %v", err)
-				return nil, nil, nil, err
-			}
-			LOG_WARN("LIST_FAILURE", "Failed to list subdirectory: %v", err)
-			skippedDirectories = append(skippedDirectories, directory.Path)
-			continue
-		}
-
-		directories = append(directories, subdirectories...)
-		skippedFiles = append(skippedFiles, skipped...)
-
-		if !snapshot.discardAttributes && len(snapshot.Files) > attributeThreshold {
-			LOG_INFO("LIST_ATTRIBUTES", "Discarding file attributes")
-			snapshot.discardAttributes = true
-			for _, file := range snapshot.Files {
-				file.Attributes = nil
-			}
-		}
+	var backupFileAttributes bool
+	if fileAttrValue, found := os.LookupEnv("DUPLICACY_BACKUP_FILE_ATTRIBUTES"); found && fileAttrValue != "" && fileAttrValue != "0" {
+		backupFileAttributes = true
 	}
 
-	// Remove the root entry
-	snapshot.Files = snapshot.Files[1:]
+	snapshot.Files, skippedDirectories, skippedFiles, snapshot.discardAttributes, err = ListEntries(top, patterns, nobackupFile, attributeThreshold, excludeByAttribute, backupFileAttributes)
+	if err != nil {
+		LOG_ERROR("LIST_FAILURE", "Failed to list repository: %v", err)
+		return nil, nil, nil, err
+	}
 
 	return snapshot, skippedDirectories, skippedFiles, nil
 }

@@ -133,6 +133,10 @@ func (entry *Entry) ReadFileAttribute(top string) {
 func (entry *Entry) SetFileAttributesToFile(fullPath string) {
 }
 
+func GetXattr(path string) (attributesMap map[string][]byte) {
+	return nil
+}
+
 func (entry *Entry) ReadAttributes(top string) {
 }
 

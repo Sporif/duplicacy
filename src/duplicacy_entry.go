@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,7 +14,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/karrick/godirwalk"
 )
 
 // This is the hidden directory in the repository for storing various files.
@@ -456,123 +459,316 @@ func (files FileInfoCompare) Less(i, j int) bool {
 	}
 }
 
-// ListEntries returns a list of entries representing file and subdirectories under the directory 'path'.  Entry paths
+// ListEntries returns a list of entries representing files and subdirectories under the directory 'top' (recursively).  Entry paths
 // are normalized as relative to 'top'.  'patterns' are used to exclude or include certain files.
-func ListEntries(top string, path string, fileList *[]*Entry, patterns []string, nobackupFile string, discardAttributes bool, excludeByAttribute bool) (directoryList []*Entry,
-	skippedFiles []string, err error) {
+func ListEntries(top string, patterns []string, nobackupFile string, attributeThreshold int, excludeByAttribute bool, backupFileAttributes bool) (entries []*Entry, skippedDirectories []string, skippedFiles []string, discardAttributes bool, err error) {
 
-	LOG_DEBUG("LIST_ENTRIES", "Listing %s", path)
+	LOG_DEBUG("LIST_ENTRIES", "Listing %s", top)
 
-	fullPath := joinPath(top, path)
-
-	files := make([]os.FileInfo, 0, 1024)
-
-	files, err = ioutil.ReadDir(fullPath)
-	if err != nil {
-		return directoryList, nil, err
-	}
-
-	// This binary search works because ioutil.ReadDir returns files sorted by Name() by default
-	if nobackupFile != "" {
-		ii := sort.Search(len(files), func(ii int) bool { return strings.Compare(files[ii].Name(), nobackupFile) >= 0 })
-		if ii < len(files) && files[ii].Name() == nobackupFile {
-			LOG_DEBUG("LIST_NOBACKUP", "%s is excluded due to nobackup file", path)
-			return directoryList, skippedFiles, nil
-		}
-	}
-
-	normalizedPath := path
-	if len(normalizedPath) > 0 && normalizedPath[len(normalizedPath)-1] != '/' {
-		normalizedPath += "/"
-	}
-
+	pathSeparator := string(os.PathSeparator)
 	normalizedTop := top
-	if normalizedTop != "" && normalizedTop[len(normalizedTop)-1] != '/' {
-		normalizedTop += "/"
+	if normalizedTop != "" && !strings.HasSuffix(normalizedTop, pathSeparator) {
+		normalizedTop += pathSeparator
 	}
 
-	sort.Sort(FileInfoCompare(files))
+	var discardAttributesInt int32
+	var (
+		entriesMu, skippedDirMu, skippedFileMu sync.Mutex
+	)
 
-	entries := make([]*Entry, 0, 4)
+	type Name struct {
+		fullPath       string
+		relPath        string
+		isDir          bool
+		readAttributes bool
+		attributes     map[string][]byte
+	}
+	namesCh := make(chan Name, runtime.NumCPU()*16)
 
-	for _, f := range files {
-		if f.Name() == DUPLICACY_DIRECTORY {
-			continue
+	matchPath := func(path string) bool {
+		if len(patterns) > 0 && !MatchPath(path, patterns) {
+			return false
 		}
-		entry := CreateEntryFromFileInfo(f, normalizedPath)
-		if len(patterns) > 0 && !MatchPath(entry.Path, patterns) {
-			continue
+		return true
+	}
+
+	// Get path relative to top, appending '/' if directory
+	getRelPath := func(path string, isDir bool) (relPath string) {
+		if path != "" {
+			relPath = filepath.ToSlash(strings.TrimPrefix(path, normalizedTop))
+			if isDir && relPath != "" && !strings.HasSuffix(relPath, "/") {
+				relPath += "/"
+			}
 		}
+		return
+	}
+
+	handleSkipped := func(skipped Name) {
+		if skipped.isDir {
+			skippedDirMu.Lock()
+			defer skippedDirMu.Unlock()
+			skippedDirectories = append(skippedFiles, skipped.relPath)
+		} else {
+			skippedFileMu.Lock()
+			defer skippedFileMu.Unlock()
+			skippedFiles = append(skippedFiles, skipped.relPath)
+		}
+	}
+
+	// Turn a Path and Dirent into Name and send to namesCh
+	processDirent := func(osPathname string, de *godirwalk.Dirent, firstLevelSymDir bool) error {
+		isDir := (de.IsDir() && !de.IsSymlink()) || firstLevelSymDir
+		relPath := getRelPath(osPathname, isDir)
+		name := Name{fullPath: osPathname, relPath: relPath, isDir: isDir}
+
+		if !matchPath(relPath) {
+			return godirwalk.SkipThis
+		}
+
+		if isDir && nobackupFile != "" {
+			files, dirError := godirwalk.ReadDirnames(osPathname, nil)
+			if dirError != nil {
+				LOG_WARN("LIST_FAILURE", "Failed to list subdirectory %s: %v", relPath, dirError)
+				handleSkipped(name)
+				return godirwalk.SkipThis
+			}
+			sort.Strings(files)
+			ii := sort.Search(len(files), func(ii int) bool { return strings.Compare(files[ii], nobackupFile) >= 0 })
+			if ii < len(files) && files[ii] == nobackupFile {
+				LOG_DEBUG("LIST_NOBACKUP", "%s is excluded due to nobackup file", relPath)
+				return godirwalk.SkipThis
+			}
+		}
+
+		if isDir && atomic.LoadInt32(&discardAttributesInt) != 1 {
+			name.attributes = GetXattr(osPathname)
+			name.readAttributes = true
+
+			if excludeByAttribute && excludedByAttribute(name.attributes) {
+				LOG_DEBUG("LIST_EXCLUDE", "%s is excluded by attribute", relPath)
+				return godirwalk.SkipThis
+			}
+		}
+
+		namesCh <- name
+		return nil
+	}
+
+	// Turn a Name into an Entry and append to entries
+	processName := func(name Name) {
+		lstat, lstatErr := os.Lstat(name.fullPath)
+
+		switch {
+		case os.IsNotExist(lstatErr):
+			return // Path was removed after walking - ignore.
+		case lstatErr != nil:
+			LOG_WARN("LIST_FAILURE", "Failed to Lstat path: %s, %v", name.relPath, lstatErr)
+			handleSkipped(name)
+			return
+		case lstat.Mode()&(os.ModeNamedPipe|os.ModeSocket|os.ModeDevice) != 0:
+			LOG_DEBUG("LIST_SKIP", "Skipped non-regular file: %s", name.relPath)
+			handleSkipped(name)
+			return
+		}
+
+		entry := CreateEntryFromFileInfo(lstat, "")
+		entry.Path = name.relPath
+
 		if entry.IsLink() {
 			isRegular := false
-			isRegular, entry.Link, err = Readlink(joinPath(top, entry.Path))
-			if err != nil {
-				LOG_WARN("LIST_LINK", "Failed to read the symlink %s: %v", entry.Path, err)
-				skippedFiles = append(skippedFiles, entry.Path)
-				continue
+			var linkErr error
+			isRegular, entry.Link, linkErr = Readlink(name.fullPath)
+			if linkErr != nil {
+				LOG_WARN("LIST_LINK", "Failed to read the symlink %s: %v", entry.Path, linkErr)
+				handleSkipped(name)
+				return
 			}
 
 			if isRegular {
 				entry.Mode ^= uint32(os.ModeSymlink)
-			} else if path == "" && (filepath.IsAbs(entry.Link) || filepath.HasPrefix(entry.Link, `\\`)) && !strings.HasPrefix(entry.Link, normalizedTop) {
-				stat, err := os.Stat(joinPath(top, entry.Path))
-				if err != nil {
-					LOG_WARN("LIST_LINK", "Failed to read the symlink: %v", err)
-					skippedFiles = append(skippedFiles, entry.Path)
-					continue
+			} else if name.isDir {
+				stat, statErr := os.Stat(name.fullPath)
+				if statErr != nil {
+					LOG_WARN("LIST_LINK", "Failed to stat the symlink: %v", statErr)
+					handleSkipped(name)
+					return
 				}
 
 				newEntry := CreateEntryFromFileInfo(stat, "")
-				if runtime.GOOS == "windows" {
-					// On Windows, stat.Name() is the last component of the target, so we need to construct the correct
-					// path from f.Name(); note that a "/" is append assuming a symbolic link is always a directory
-					newEntry.Path = filepath.Join(normalizedPath, f.Name()) + "/"
-				}
-				if len(patterns) > 0 && !MatchPath(newEntry.Path, patterns) {
-					continue
-				}
+				newEntry.Path = entry.Path
 				entry = newEntry
 			}
 		}
 
-		entry.ReadFileAttribute(top)
-
-		if !discardAttributes {
-			entry.ReadAttributes(top)
+		if !entry.IsLink() && backupFileAttributes {
+			entry.ReadFileAttribute(top)
 		}
 
-		if excludeByAttribute && excludedByAttribute(entry.Attributes) {
-			LOG_DEBUG("LIST_EXCLUDE", "%s is excluded by attribute", entry.Path)
-			continue
+		if atomic.LoadInt32(&discardAttributesInt) != 1 {
+			if name.readAttributes {
+				entry.Attributes = name.attributes
+			} else {
+				entry.ReadAttributes(top)
+			}
+
+			if excludeByAttribute && excludedByAttribute(entry.Attributes) {
+				LOG_DEBUG("LIST_EXCLUDE", "%s is excluded by attribute", entry.Path)
+				return
+			}
 		}
 
-		if f.Mode()&(os.ModeNamedPipe|os.ModeSocket|os.ModeDevice) != 0 {
-			LOG_WARN("LIST_SKIP", "Skipped non-regular file %s", entry.Path)
-			skippedFiles = append(skippedFiles, entry.Path)
-			continue
+		entriesMu.Lock()
+		defer entriesMu.Unlock()
+		if !discardAttributes && len(entries) > attributeThreshold {
+			LOG_INFO("LIST_ATTRIBUTES", "Discarding file attributes")
+			atomic.StoreInt32(&discardAttributesInt, 1)
+			discardAttributes = true
+			for _, file := range entries {
+				file.Attributes = nil
+			}
+			entry.Attributes = nil
 		}
-
 		entries = append(entries, entry)
 	}
 
-	// For top level directory we need to sort again because symlinks may have been changed
-	if path == "" {
-		sort.Sort(ByName(entries))
-	}
+	var topWG sync.WaitGroup
+	var processTop func(path string, subDe *godirwalk.Dirent) error
+	pathsCh := make(chan string, runtime.NumCPU()*16)
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			directoryList = append(directoryList, entry)
-		} else {
-			*fileList = append(*fileList, entry)
+	// Process root of top level directory
+	processTop = func(path string, subDe *godirwalk.Dirent) error {
+		defer topWG.Done()
+		if subDe != nil {
+			subErr := processDirent(path, subDe, true)
+			if subErr != nil {
+				return subErr
+			}
+			if !strings.HasSuffix(path, pathSeparator) {
+				path += pathSeparator
+			}
 		}
+
+		dirents, readErr := godirwalk.ReadDirents(path, nil)
+		if readErr != nil {
+			if path != normalizedTop {
+				LOG_WARN("LIST_FAILURE", "Failed to list subdirectory %s: %v", subDe.Name()+"/", readErr)
+				handleSkipped(Name{fullPath: path, relPath: subDe.Name() + "/", isDir: true})
+			}
+			return readErr
+		}
+
+		for _, de := range dirents {
+			fullPath := path + de.Name()
+
+			if fullPath == normalizedTop+DUPLICACY_DIRECTORY {
+				continue
+			}
+
+			var relPath string
+			isDir := de.IsDir()
+			isSymlink := de.IsSymlink()
+
+			isSymlinkDir := false
+			// Check if it's a symlink to an absolute target outside top
+			if isSymlink && path == normalizedTop {
+				relPath = getRelPath(fullPath, false)
+				name := Name{fullPath: fullPath, relPath: relPath}
+				isRegular, link, linkErr := Readlink(fullPath)
+				if linkErr != nil {
+					LOG_WARN("LIST_LINK", "Failed to read the symlink %s: %v", relPath, linkErr)
+					handleSkipped(name)
+					continue
+				}
+
+				linkIsDir := false
+				stat, statErr := os.Stat(fullPath)
+				if statErr != nil {
+					LOG_WARN("LIST_LINK", "Failed to stat the symlink %s: %v", relPath, statErr)
+				} else {
+					linkIsDir = stat.IsDir()
+				}
+				isSymlinkDir = !isRegular && linkIsDir && (filepath.IsAbs(link) || filepath.HasPrefix(link, `\\`)) && !strings.HasPrefix(link, normalizedTop)
+			}
+
+			isRegular := de.IsRegular() || (isSymlink && (!isSymlinkDir || !isDir))
+
+			if isDir && !isSymlinkDir {
+				pathsCh <- fullPath
+			} else if isSymlinkDir {
+				topWG.Add(1)
+				go processTop(fullPath, de)
+			} else {
+				relPath = getRelPath(fullPath, false)
+				if !matchPath(relPath) {
+					continue
+				}
+				name := Name{fullPath: fullPath, relPath: relPath}
+
+				if isRegular {
+					namesCh <- name
+				} else {
+					LOG_DEBUG("LIST_SKIP", "Skipped non-regular file: %s", name.relPath)
+					handleSkipped(name)
+					continue
+				}
+			}
+		}
+
+		return nil
 	}
 
-	for i, j := 0, len(directoryList)-1; i < j; i, j = i+1, j-1 {
-		directoryList[i], directoryList[j] = directoryList[j], directoryList[i]
-	}
+	go func() {
+		topWG.Add(1)
+		err = processTop(normalizedTop, nil)
+		topWG.Wait()
+		close(pathsCh)
+	}()
 
-	return directoryList, skippedFiles, nil
+	numWorkers := runtime.NumCPU()
+	var walkersWG sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		walkersWG.Add(1)
+
+		go func() {
+			defer walkersWG.Done()
+
+			for path := range pathsCh {
+				godirwalk.Walk(path, &godirwalk.Options{
+					Unsorted: false,
+					Callback: func(osPathname string, de *godirwalk.Dirent) error {
+						return processDirent(osPathname, de, false)
+					},
+					ErrorCallback: func(osPathname string, oSerr error) godirwalk.ErrorAction {
+						// Assume it's a directory
+						relPath := getRelPath(osPathname, true)
+						LOG_WARN("LIST_FAILURE", "Failed to list subdirectory: %s, %v", relPath, oSerr)
+						handleSkipped(Name{fullPath: osPathname, relPath: relPath, isDir: true})
+						return godirwalk.SkipNode
+					},
+				})
+			}
+		}()
+	}
+	go func() {
+		walkersWG.Wait()
+		close(namesCh)
+	}()
+
+	var workersWG sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		workersWG.Add(1)
+		go func() {
+			defer workersWG.Done()
+			for name := range namesCh {
+				processName(name)
+			}
+		}()
+	}
+	workersWG.Wait()
+
+	sort.Sort(ByName(entries))
+
+	return entries, skippedDirectories, skippedFiles, discardAttributes, err
 }
 
 // Diff returns how many bytes remain unmodifiled between two files.
