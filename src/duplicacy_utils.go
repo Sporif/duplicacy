@@ -156,7 +156,7 @@ func RateLimitedCopy(writer io.Writer, reader io.Reader, rate int) (written int6
 
 // GenerateKeyFromPassword generates a key from the password.
 func GenerateKeyFromPassword(password string, salt []byte, iterations int) []byte {
-	return argon2.IDKey([]byte(password), salt, uint32(iterations), 64*1024, 2, 32)
+	return argon2.IDKey([]byte(password), salt, uint32(iterations), 24*1024, 4, 32)
 }
 
 // Get password from preference, env, but don't start any keyring request
