@@ -766,9 +766,55 @@ func ListEntries(top string, patterns []string, nobackupFile string, attributeTh
 	}
 	workersWG.Wait()
 
-	sort.Sort(ByName(entries))
+	mergeSort(entries, make([]*Entry, len(entries)))
 
 	return entries, skippedDirectories, skippedFiles, discardAttributes, err
+}
+
+func mergeSort(src, temp []*Entry) {
+	if len(src) <= 100 {
+		sort.Sort(ByName(src))
+		return
+	}
+
+	mid := len(src) / 2
+	left, lTemp := src[:mid], temp[:mid]
+	right, rTemp := src[mid:], temp[mid:]
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mergeSort(left, lTemp)
+	}()
+	mergeSort(right, rTemp)
+	wg.Wait()
+
+	merge(src, temp, left, right)
+}
+
+func merge(src, result, left, right []*Entry) {
+	var l, r, i int
+
+	for l < len(left) || r < len(right) {
+		if l < len(left) && r < len(right) {
+			if left[l].Compare(right[r]) <= 0 {
+				result[i] = left[l]
+				l++
+			} else {
+				result[i] = right[r]
+				r++
+			}
+		} else if l < len(left) {
+			result[i] = left[l]
+			l++
+		} else if r < len(right) {
+			result[i] = right[r]
+			r++
+		}
+		i++
+	}
+	copy(src, result)
 }
 
 // Diff returns how many bytes remain unmodifiled between two files.

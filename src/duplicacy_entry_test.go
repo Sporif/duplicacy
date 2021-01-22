@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"testing"
 
@@ -194,7 +193,7 @@ func TestEntryList(t *testing.T) {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
 
-	sort.Sort(ByName(entries))
+	mergeSort(ByName(entries), make([]*Entry, len(entries)))
 
 	for i := 0; i < len(entries); i++ {
 		if entries[i].Path != DATA[i] {
