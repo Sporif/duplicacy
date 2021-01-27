@@ -46,7 +46,7 @@ func ReleaseChunkBuffer(buffer *bytes.Buffer) {
 	}
 }
 
-var zstdEncodersPool chan *zstd.Encoder = make(chan *zstd.Encoder, runtime.NumCPU())
+var zstdEncodersPool chan *zstd.Encoder = make(chan *zstd.Encoder, runtime.NumCPU()*16)
 
 func AllocateZstdEncoder(buffer *bytes.Buffer) (enc *zstd.Encoder) {
 	var err error
@@ -70,7 +70,7 @@ func ReleaseZstdEncoder(enc *zstd.Encoder) {
 	}
 }
 
-var zstdDecodersPool chan *zstd.Decoder = make(chan *zstd.Decoder, runtime.NumCPU())
+var zstdDecodersPool chan *zstd.Decoder = make(chan *zstd.Decoder, runtime.NumCPU()*16)
 
 func AllocateZstdDecoder(buffer *bytes.Buffer) (dec *zstd.Decoder) {
 	var err error
